@@ -6,7 +6,9 @@ export const IpcChannels = {
   projectOpenDialog: 'project:open-dialog',
   projectLoad: 'project:load',
   ingestPickFiles: 'ingest:pick-files',
-  ingestImport: 'ingest:import'
+  ingestImport: 'ingest:import',
+  syncRun: 'sync:run',
+  syncProgress: 'sync:progress'
 } as const
 
 export interface ProjectSaveArgs {
@@ -29,3 +31,15 @@ export interface IngestImportArgs {
 }
 
 export type IngestImportResult = SourceClip[]
+
+export interface SyncRunArgs {
+  sources: SourceClip[]
+}
+
+export type SyncRunResult = SourceClip[]
+
+export interface SyncProgressEvent {
+  stage: 'extracting' | 'correlating' | 'done'
+  sourceLabel?: string
+  progress: number
+}

@@ -3,13 +3,15 @@ import ffprobeStatic from 'ffprobe-static'
 import ffmpeg from 'fluent-ffmpeg'
 import { readFile, writeFile, rm } from 'fs/promises'
 import { join } from 'path'
+import { tmpdir } from 'os'
+import { randomUUID } from 'crypto'
 import type { ProbedMediaInfo } from '@shared/types/project'
 
 ffmpeg.setFfmpegPath(ffmpegPath as unknown as string)
 ffmpeg.setFfprobePath(ffprobeStatic.path)
 
 const WAVEFORM_BUCKETS_PER_SEC = 10
-const WAVEFORM_SAMPLE_RATE = 8000
+export const SYNC_SAMPLE_RATE = 8000
 
 export function probeFile(filePath: string): Promise<ProbedMediaInfo> {
   return new Promise((resolve, reject) => {
@@ -51,12 +53,23 @@ export function extractMonoPcm(filePath: string, outPcmPath: string): Promise<vo
     ffmpeg(filePath)
       .noVideo()
       .audioChannels(1)
-      .audioFrequency(WAVEFORM_SAMPLE_RATE)
+      .audioFrequency(SYNC_SAMPLE_RATE)
       .format('s16le')
       .on('error', reject)
       .on('end', () => resolve())
       .save(outPcmPath)
   })
+}
+
+/** Extracts the full file's mono PCM into memory as Int16 samples at SYNC_SAMPLE_RATE. */
+export async function extractMonoPcmSamples(filePath: string): Promise<Int16Array> {
+  const tmpPath = join(tmpdir(), `wackest-sync-${randomUUID()}.pcm`)
+  await extractMonoPcm(filePath, tmpPath)
+  const buffer = await readFile(tmpPath)
+  const samples = new Int16Array(buffer.buffer, buffer.byteOffset, Math.floor(buffer.length / 2))
+  const copy = new Int16Array(samples) // detach from the Buffer's pooled memory before it's freed
+  await rm(tmpPath, { force: true })
+  return copy
 }
 
 export async function extractWaveformPeaks(

@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerProjectIpc } from './ipc/project'
 import { registerIngestIpc } from './ipc/ingest'
+import { registerSyncIpc } from './ipc/sync'
 
 function createWindow(): void {
   // Create the browser window.
@@ -56,6 +57,7 @@ app.whenReady().then(() => {
 
   registerProjectIpc()
   registerIngestIpc()
+  registerSyncIpc()
 
   createWindow()
 

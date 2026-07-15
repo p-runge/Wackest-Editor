@@ -6,22 +6,29 @@ import {
   type Project,
   type SourceClip
 } from '@shared/types/project'
+import type { SyncProgressEvent } from '@shared/types/ipc'
 
 interface ProjectState {
   project: Project | null
   projectDir: string | null
   isImporting: boolean
+  isSyncing: boolean
+  syncProgress: SyncProgressEvent | null
   error: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
   saveProject: () => Promise<void>
   importFiles: () => Promise<void>
+  runSync: () => Promise<void>
+  setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   project: null,
   projectDir: null,
   isImporting: false,
+  isSyncing: false,
+  syncProgress: null,
   error: null,
 
   newProject: async () => {
@@ -75,5 +82,49 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } finally {
       set({ isImporting: false })
     }
+  },
+
+  runSync: async () => {
+    const { project } = get()
+    if (!project || project.sources.length === 0) return
+
+    set({ isSyncing: true, error: null, syncProgress: null })
+    const unsubscribe = window.api.sync.onProgress((update) => set({ syncProgress: update }))
+    try {
+      const updatedSources = await window.api.sync.run({ sources: project.sources })
+      set((state) => {
+        if (!state.project) return state
+        const updated: Project = { ...state.project, sources: updatedSources }
+        updated.timelineDurationSec = recomputeTimelineDuration(updated)
+        return { project: updated }
+      })
+      await get().saveProject()
+    } catch (err) {
+      set({ error: String(err) })
+    } finally {
+      unsubscribe()
+      set({ isSyncing: false, syncProgress: null })
+    }
+  },
+
+  setManualOffset: async (sourceId, segmentId, offsetSec) => {
+    set((state) => {
+      if (!state.project) return state
+      const sources = state.project.sources.map((source) => {
+        if (source.id !== sourceId) return source
+        return {
+          ...source,
+          syncSegments: source.syncSegments.map((segment) =>
+            segment.id === segmentId
+              ? { ...segment, offsetSec, confidence: 1, method: 'manual' as const }
+              : segment
+          )
+        }
+      })
+      const updated: Project = { ...state.project, sources }
+      updated.timelineDurationSec = recomputeTimelineDuration(updated)
+      return { project: updated }
+    })
+    await get().saveProject()
   }
 }))

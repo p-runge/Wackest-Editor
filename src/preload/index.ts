@@ -6,7 +6,10 @@ import type {
   ProjectLoadArgs,
   ProjectLoadResult,
   IngestImportArgs,
-  IngestImportResult
+  IngestImportResult,
+  SyncRunArgs,
+  SyncRunResult,
+  SyncProgressEvent
 } from '@shared/types/ipc'
 
 const api = {
@@ -23,6 +26,15 @@ const api = {
     pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.ingestPickFiles),
     import: (args: IngestImportArgs): Promise<IngestImportResult> =>
       ipcRenderer.invoke(IpcChannels.ingestImport, args)
+  },
+  sync: {
+    run: (args: SyncRunArgs): Promise<SyncRunResult> =>
+      ipcRenderer.invoke(IpcChannels.syncRun, args),
+    onProgress: (callback: (update: SyncProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: SyncProgressEvent): void => callback(update)
+      ipcRenderer.on(IpcChannels.syncProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.syncProgress, listener)
+    }
   }
 }
 
