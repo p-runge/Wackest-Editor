@@ -7,6 +7,7 @@ import type {
   ProjectLoadResult,
   IngestImportArgs,
   IngestImportResult,
+  IngestRemoveCacheArgs,
   SyncRunArgs,
   SyncRunResult,
   SyncProgressEvent
@@ -25,7 +26,9 @@ const api = {
   ingest: {
     pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.ingestPickFiles),
     import: (args: IngestImportArgs): Promise<IngestImportResult> =>
-      ipcRenderer.invoke(IpcChannels.ingestImport, args)
+      ipcRenderer.invoke(IpcChannels.ingestImport, args),
+    removeCache: (args: IngestRemoveCacheArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.ingestRemoveCache, args)
   },
   sync: {
     run: (args: SyncRunArgs): Promise<SyncRunResult> =>

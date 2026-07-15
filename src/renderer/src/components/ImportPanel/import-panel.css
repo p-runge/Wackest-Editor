@@ -74,8 +74,30 @@
   font-size: 20px;
 }
 
+.source-row__meta {
+  flex: 1;
+  min-width: 0;
+}
+
 .source-row__label {
   font-weight: 600;
+}
+
+.source-row__remove {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e6e6;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.source-row__remove:hover {
+  background: rgba(255, 128, 128, 0.25);
+  color: #ff8080;
 }
 
 .source-row__details {

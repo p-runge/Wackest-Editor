@@ -1,10 +1,15 @@
 import { ipcMain, dialog } from 'electron'
 import { join, basename, relative, extname } from 'path'
-import { mkdir } from 'fs/promises'
+import { mkdir, rm } from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
 import { probeFile, extractWaveformPeaks, extractThumbnail } from '../services/ffmpeg'
 import type { SourceClip } from '@shared/types/project'
-import { IpcChannels, type IngestImportArgs, type IngestImportResult } from '@shared/types/ipc'
+import {
+  IpcChannels,
+  type IngestImportArgs,
+  type IngestImportResult,
+  type IngestRemoveCacheArgs
+} from '@shared/types/ipc'
 
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm']
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg']
@@ -85,4 +90,10 @@ export function registerIngestIpc(): void {
       return clips
     }
   )
+
+  ipcMain.handle(IpcChannels.ingestRemoveCache, async (_event, args: IngestRemoveCacheArgs) => {
+    const cacheDir = join(args.projectDir, 'cache')
+    await rm(join(cacheDir, `${args.sourceId}.waveform.json`), { force: true })
+    await rm(join(cacheDir, `${args.sourceId}.thumb.jpg`), { force: true })
+  })
 }

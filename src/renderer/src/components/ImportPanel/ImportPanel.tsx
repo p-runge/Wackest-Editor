@@ -18,6 +18,7 @@ function ImportPanel(): React.JSX.Element {
   const newProject = useProjectStore((state) => state.newProject)
   const openProject = useProjectStore((state) => state.openProject)
   const importFiles = useProjectStore((state) => state.importFiles)
+  const removeSource = useProjectStore((state) => state.removeSource)
 
   if (!project || !projectDir) {
     return (
@@ -75,6 +76,17 @@ function ImportPanel(): React.JSX.Element {
                   )}
                 </div>
               </div>
+              <button
+                className="source-row__remove"
+                title="Quelle entfernen"
+                onClick={() => {
+                  if (window.confirm(`"${source.label}" aus dem Projekt entfernen?`)) {
+                    void removeSource(source.id)
+                  }
+                }}
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>

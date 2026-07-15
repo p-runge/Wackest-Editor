@@ -7,6 +7,7 @@ export const IpcChannels = {
   projectLoad: 'project:load',
   ingestPickFiles: 'ingest:pick-files',
   ingestImport: 'ingest:import',
+  ingestRemoveCache: 'ingest:remove-cache',
   syncRun: 'sync:run',
   syncProgress: 'sync:progress'
 } as const
@@ -31,6 +32,11 @@ export interface IngestImportArgs {
 }
 
 export type IngestImportResult = SourceClip[]
+
+export interface IngestRemoveCacheArgs {
+  projectDir: string
+  sourceId: string
+}
 
 export interface SyncRunArgs {
   sources: SourceClip[]

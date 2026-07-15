@@ -19,6 +19,7 @@ interface ProjectState {
   openProject: () => Promise<void>
   saveProject: () => Promise<void>
   importFiles: () => Promise<void>
+  removeSource: (sourceId: string) => Promise<void>
   runSync: () => Promise<void>
   setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
 }
@@ -81,6 +82,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ error: String(err) })
     } finally {
       set({ isImporting: false })
+    }
+  },
+
+  removeSource: async (sourceId) => {
+    const { project, projectDir } = get()
+    if (!project || !projectDir) return
+
+    set((state) => {
+      if (!state.project) return state
+      const updated: Project = {
+        ...state.project,
+        sources: state.project.sources.filter((source) => source.id !== sourceId)
+      }
+      updated.timelineDurationSec = recomputeTimelineDuration(updated)
+      return { project: updated }
+    })
+    await get().saveProject()
+    try {
+      await window.api.ingest.removeCache({ projectDir, sourceId })
+    } catch (err) {
+      set({ error: String(err) })
     }
   },
 
