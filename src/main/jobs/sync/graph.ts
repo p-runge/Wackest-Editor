@@ -172,5 +172,31 @@ export function buildAndResolveSyncGraph(
     })
   }
 
+  normalizeToEarliestStart(nodes, results)
   return results
+}
+
+/**
+ * The anchor picked for graph resolution is whichever segment correlates best, not necessarily
+ * the one that starts first — so raw offsets can come out negative (anchor started later than
+ * some other segment). Re-reference the whole result set so the earliest actual content across
+ * all segments sits at unified time 0, which is what a timeline should look like either way and
+ * matches user expectations. This is just a constant shift; all relative offsets are unaffected.
+ */
+function normalizeToEarliestStart(
+  nodes: SegmentNode[],
+  results: Map<string, ResolvedSegment>
+): void {
+  let minUnifiedStart = Infinity
+  for (const node of nodes) {
+    const resolved = results.get(nodeKey(node.sourceId, node.segmentIndex))
+    if (!resolved) continue
+    const unifiedStart = node.localStartSec + resolved.offsetSec
+    if (unifiedStart < minUnifiedStart) minUnifiedStart = unifiedStart
+  }
+  if (!Number.isFinite(minUnifiedStart) || minUnifiedStart === 0) return
+
+  for (const [key, resolved] of results) {
+    results.set(key, { ...resolved, offsetSec: resolved.offsetSec - minUnifiedStart })
+  }
 }
