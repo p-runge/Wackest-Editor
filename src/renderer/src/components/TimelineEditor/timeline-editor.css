@@ -1,0 +1,257 @@
+.timeline-editor {
+  padding: 0 24px 24px;
+  color: #e6e6e6;
+}
+
+.preview-player {
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-player--empty {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}
+
+.preview-player__video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.timeline-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.timeline-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-toolbar__group button.is-active {
+  background: rgba(127, 209, 255, 0.25);
+  color: #7fd1ff;
+}
+
+.timeline-toolbar__time {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+  min-width: 60px;
+}
+
+.timeline-toolbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.timeline-toolbar__hint {
+  font-size: 12px;
+  opacity: 0.65;
+  margin: 0 0 8px;
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.timeline-content {
+  position: relative;
+  padding: 4px 0;
+}
+
+.time-ruler {
+  display: flex;
+  height: 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.time-ruler__label {
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #1a1a1f;
+}
+
+.time-ruler__track {
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.time-ruler__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 10px;
+  opacity: 0.6;
+  padding-left: 3px;
+  white-space: nowrap;
+}
+
+/* shared lane layout: a label column + a relatively-positioned track for absolutely-placed blocks */
+.source-lane,
+.interval-lane,
+.subtitle-lane,
+.heatmap-lane,
+.cut-lane {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.source-lane__label,
+.interval-lane__label,
+.subtitle-lane__label,
+.heatmap-lane__label,
+.cut-lane__label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #1a1a1f;
+  border-left: 3px solid transparent;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.source-lane__thumb {
+  width: 24px;
+  height: 14px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.source-lane__track,
+.interval-lane__track,
+.subtitle-lane__track,
+.heatmap-lane__track,
+.cut-lane__track {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 28px;
+}
+
+.source-lane__segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border: 1px solid;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.source-lane__hardcut {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff8080;
+}
+
+.interval-lane__block,
+.subtitle-lane__block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 11px;
+  color: #14141a;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.subtitle-lane__block {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.heatmap-lane__bucket {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-right: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.cut-lane__track {
+  cursor: pointer;
+  background: rgba(255, 128, 128, 0.05);
+}
+
+.cut-lane__track--razor {
+  cursor: col-resize;
+}
+
+.cut-lane__block {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(120, 220, 140, 0.25);
+  border: 1px solid rgba(120, 220, 140, 0.4);
+  border-radius: 3px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cut-lane__delete {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 128, 128, 0.3);
+  color: #e6e6e6;
+  font-size: 11px;
+  line-height: 1;
+  margin: 2px;
+  cursor: pointer;
+}
+
+.cut-lane__delete:hover {
+  background: rgba(255, 128, 128, 0.6);
+}
+
+.timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #ff8080;
+  pointer-events: none;
+  z-index: 3;
+}

@@ -1,13 +1,21 @@
 import { create } from 'zustand'
+import { temporal } from 'zundo'
 import { v4 as uuidv4 } from 'uuid'
 import {
   createEmptyProject,
   recomputeTimelineDuration,
   type Project,
   type SourceClip,
-  type SttProviderId
+  type SttProviderId,
+  type HeatmapProviderId
 } from '@shared/types/project'
 import type { SyncProgressEvent } from '@shared/types/ipc'
+import {
+  insertActiveSwitch,
+  splitKeptRangeAt,
+  removeKeptRange as removeKeptRangeFn,
+  initializeKeptRanges
+} from '../lib/timeline-edit'
 
 interface ProjectState {
   project: Project | null
@@ -17,6 +25,8 @@ interface ProjectState {
   syncProgress: SyncProgressEvent | null
   isTranscribing: boolean
   sttProgress: number | null
+  isScoringHeatmap: boolean
+  heatmapProgress: number | null
   error: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
@@ -29,199 +39,318 @@ interface ProjectState {
   setSttProvider: (provider: SttProviderId) => Promise<void>
   setSttLanguageHint: (languageHint: string) => Promise<void>
   setTranscriptionSource: (sourceId: string | undefined) => Promise<void>
+  runHeatmap: () => Promise<void>
+  setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
+  setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
+  setPrimaryAudioAt: (atSec: number, sourceId: string) => Promise<void>
+  splitCutAt: (atSec: number) => Promise<void>
+  deleteKeptRange: (rangeId: string) => Promise<void>
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  project: null,
-  projectDir: null,
-  isImporting: false,
-  isSyncing: false,
-  syncProgress: null,
-  isTranscribing: false,
-  sttProgress: null,
-  error: null,
+export const useProjectStore = create<ProjectState>()(
+  temporal(
+    (set, get) => ({
+      project: null,
+      projectDir: null,
+      isImporting: false,
+      isSyncing: false,
+      syncProgress: null,
+      isTranscribing: false,
+      sttProgress: null,
+      isScoringHeatmap: false,
+      heatmapProgress: null,
+      error: null,
 
-  newProject: async () => {
-    const dir = await window.api.project.chooseDirectory()
-    if (!dir) return
-    const name = dir.split('/').pop() ?? 'Neues Projekt'
-    const project = createEmptyProject(name, uuidv4())
-    set({ project, projectDir: dir, error: null })
-    await window.api.project.save({ projectDir: dir, project })
-  },
+      newProject: async () => {
+        const dir = await window.api.project.chooseDirectory()
+        if (!dir) return
+        const name = dir.split('/').pop() ?? 'Neues Projekt'
+        const project = createEmptyProject(name, uuidv4())
+        set({ project, projectDir: dir, error: null })
+        await window.api.project.save({ projectDir: dir, project })
+      },
 
-  openProject: async () => {
-    const filePath = await window.api.project.openDialog()
-    if (!filePath) return
-    try {
-      const { project, projectDir } = await window.api.project.load({ projectFilePath: filePath })
-      set({ project, projectDir, error: null })
-    } catch (err) {
-      set({ error: String(err) })
-    }
-  },
-
-  saveProject: async () => {
-    const { project, projectDir } = get()
-    if (!project || !projectDir) return
-    await window.api.project.save({ projectDir, project })
-  },
-
-  importFiles: async () => {
-    const { project, projectDir } = get()
-    if (!project || !projectDir) return
-
-    const filePaths = await window.api.ingest.pickFiles()
-    if (filePaths.length === 0) return
-
-    set({ isImporting: true, error: null })
-    try {
-      const newClips: SourceClip[] = await window.api.ingest.import({ filePaths, projectDir })
-      set((state) => {
-        if (!state.project) return state
-        const updated: Project = {
-          ...state.project,
-          sources: [...state.project.sources, ...newClips]
+      openProject: async () => {
+        const filePath = await window.api.project.openDialog()
+        if (!filePath) return
+        try {
+          const { project, projectDir } = await window.api.project.load({
+            projectFilePath: filePath
+          })
+          set({ project, projectDir, error: null })
+        } catch (err) {
+          set({ error: String(err) })
         }
-        updated.timelineDurationSec = recomputeTimelineDuration(updated)
-        return { project: updated }
-      })
-      await get().saveProject()
-    } catch (err) {
-      set({ error: String(err) })
-    } finally {
-      set({ isImporting: false })
-    }
-  },
+      },
 
-  removeSource: async (sourceId) => {
-    const { project, projectDir } = get()
-    if (!project || !projectDir) return
+      saveProject: async () => {
+        const { project, projectDir } = get()
+        if (!project || !projectDir) return
+        await window.api.project.save({ projectDir, project })
+      },
 
-    set((state) => {
-      if (!state.project) return state
-      const updated: Project = {
-        ...state.project,
-        sources: state.project.sources.filter((source) => source.id !== sourceId)
-      }
-      updated.timelineDurationSec = recomputeTimelineDuration(updated)
-      return { project: updated }
-    })
-    await get().saveProject()
-    try {
-      await window.api.ingest.removeCache({ projectDir, sourceId })
-    } catch (err) {
-      set({ error: String(err) })
-    }
-  },
+      importFiles: async () => {
+        const { project, projectDir } = get()
+        if (!project || !projectDir) return
 
-  runSync: async () => {
-    const { project } = get()
-    if (!project || project.sources.length === 0) return
+        const filePaths = await window.api.ingest.pickFiles()
+        if (filePaths.length === 0) return
 
-    set({ isSyncing: true, error: null, syncProgress: null })
-    const unsubscribe = window.api.sync.onProgress((update) => set({ syncProgress: update }))
-    try {
-      const updatedSources = await window.api.sync.run({ sources: project.sources })
-      set((state) => {
-        if (!state.project) return state
-        const updated: Project = { ...state.project, sources: updatedSources }
-        updated.timelineDurationSec = recomputeTimelineDuration(updated)
-        return { project: updated }
-      })
-      await get().saveProject()
-    } catch (err) {
-      set({ error: String(err) })
-    } finally {
-      unsubscribe()
-      set({ isSyncing: false, syncProgress: null })
-    }
-  },
+        set({ isImporting: true, error: null })
+        try {
+          const newClips: SourceClip[] = await window.api.ingest.import({ filePaths, projectDir })
+          set((state) => {
+            if (!state.project) return state
+            const updated: Project = {
+              ...state.project,
+              sources: [...state.project.sources, ...newClips]
+            }
+            updated.timelineDurationSec = recomputeTimelineDuration(updated)
+            return { project: updated }
+          })
+          await get().saveProject()
+        } catch (err) {
+          set({ error: String(err) })
+        } finally {
+          set({ isImporting: false })
+        }
+      },
 
-  setManualOffset: async (sourceId, segmentId, offsetSec) => {
-    set((state) => {
-      if (!state.project) return state
-      const sources = state.project.sources.map((source) => {
-        if (source.id !== sourceId) return source
-        return {
-          ...source,
-          syncSegments: source.syncSegments.map((segment) =>
-            segment.id === segmentId
-              ? { ...segment, offsetSec, confidence: 1, method: 'manual' as const }
-              : segment
+      removeSource: async (sourceId) => {
+        const { project, projectDir } = get()
+        if (!project || !projectDir) return
+
+        set((state) => {
+          if (!state.project) return state
+          const updated: Project = {
+            ...state.project,
+            sources: state.project.sources.filter((source) => source.id !== sourceId)
+          }
+          updated.timelineDurationSec = recomputeTimelineDuration(updated)
+          return { project: updated }
+        })
+        await get().saveProject()
+        try {
+          await window.api.ingest.removeCache({ projectDir, sourceId })
+        } catch (err) {
+          set({ error: String(err) })
+        }
+      },
+
+      runSync: async () => {
+        const { project } = get()
+        if (!project || project.sources.length === 0) return
+
+        set({ isSyncing: true, error: null, syncProgress: null })
+        const unsubscribe = window.api.sync.onProgress((update) => set({ syncProgress: update }))
+        try {
+          const updatedSources = await window.api.sync.run({ sources: project.sources })
+          set((state) => {
+            if (!state.project) return state
+            const updated: Project = { ...state.project, sources: updatedSources }
+            updated.timelineDurationSec = recomputeTimelineDuration(updated)
+            if (updated.edit.keptRanges.length === 0 && updated.timelineDurationSec > 0) {
+              updated.edit = {
+                ...updated.edit,
+                keptRanges: initializeKeptRanges(updated.timelineDurationSec)
+              }
+            }
+            return { project: updated }
+          })
+          await get().saveProject()
+        } catch (err) {
+          set({ error: String(err) })
+        } finally {
+          unsubscribe()
+          set({ isSyncing: false, syncProgress: null })
+        }
+      },
+
+      setManualOffset: async (sourceId, segmentId, offsetSec) => {
+        set((state) => {
+          if (!state.project) return state
+          const sources = state.project.sources.map((source) => {
+            if (source.id !== sourceId) return source
+            return {
+              ...source,
+              syncSegments: source.syncSegments.map((segment) =>
+                segment.id === segmentId
+                  ? { ...segment, offsetSec, confidence: 1, method: 'manual' as const }
+                  : segment
+              )
+            }
+          })
+          const updated: Project = { ...state.project, sources }
+          updated.timelineDurationSec = recomputeTimelineDuration(updated)
+          return { project: updated }
+        })
+        await get().saveProject()
+      },
+
+      runStt: async () => {
+        const { project } = get()
+        if (!project) return
+
+        set({ isTranscribing: true, error: null, sttProgress: null })
+        const unsubscribe = window.api.stt.onProgress((update) =>
+          set({ sttProgress: update.progress })
+        )
+        try {
+          const transcript = await window.api.stt.run({ project })
+          set((state) => {
+            if (!state.project) return state
+            return { project: { ...state.project, transcript } }
+          })
+          await get().saveProject()
+        } catch (err) {
+          set({ error: String(err) })
+        } finally {
+          unsubscribe()
+          set({ isTranscribing: false, sttProgress: null })
+        }
+      },
+
+      setSttProvider: async (provider) => {
+        set((state) => {
+          if (!state.project) return state
+          return {
+            project: {
+              ...state.project,
+              providerConfig: {
+                ...state.project.providerConfig,
+                stt: { ...state.project.providerConfig.stt, provider }
+              }
+            }
+          }
+        })
+        await get().saveProject()
+      },
+
+      setSttLanguageHint: async (languageHint) => {
+        set((state) => {
+          if (!state.project) return state
+          return {
+            project: {
+              ...state.project,
+              providerConfig: {
+                ...state.project.providerConfig,
+                stt: { ...state.project.providerConfig.stt, languageHint }
+              }
+            }
+          }
+        })
+        await get().saveProject()
+      },
+
+      setTranscriptionSource: async (sourceId) => {
+        set((state) => {
+          if (!state.project) return state
+          return {
+            project: {
+              ...state.project,
+              providerConfig: {
+                ...state.project.providerConfig,
+                transcriptionSourceClipId: sourceId
+              }
+            }
+          }
+        })
+        await get().saveProject()
+      },
+
+      runHeatmap: async () => {
+        const { project, projectDir } = get()
+        if (!project || !projectDir) return
+
+        set({ isScoringHeatmap: true, error: null, heatmapProgress: null })
+        const unsubscribe = window.api.heatmap.onProgress((update) =>
+          set({ heatmapProgress: update.progress })
+        )
+        try {
+          const heatmap = await window.api.heatmap.run({ project, projectDir })
+          set((state) => {
+            if (!state.project) return state
+            return { project: { ...state.project, heatmap } }
+          })
+          await get().saveProject()
+        } catch (err) {
+          set({ error: String(err) })
+        } finally {
+          unsubscribe()
+          set({ isScoringHeatmap: false, heatmapProgress: null })
+        }
+      },
+
+      setHeatmapProvider: async (provider) => {
+        set((state) => {
+          if (!state.project) return state
+          return {
+            project: {
+              ...state.project,
+              providerConfig: {
+                ...state.project.providerConfig,
+                heatmap: { ...state.project.providerConfig.heatmap, provider }
+              }
+            }
+          }
+        })
+        await get().saveProject()
+      },
+
+      setActiveVideoAt: async (atSec, sourceId) => {
+        set((state) => {
+          if (!state.project) return state
+          const activeVideoIntervals = insertActiveSwitch(
+            state.project.edit.activeVideoIntervals,
+            atSec,
+            sourceId,
+            state.project.timelineDurationSec
           )
-        }
-      })
-      const updated: Project = { ...state.project, sources }
-      updated.timelineDurationSec = recomputeTimelineDuration(updated)
-      return { project: updated }
-    })
-    await get().saveProject()
-  },
-
-  runStt: async () => {
-    const { project } = get()
-    if (!project) return
-
-    set({ isTranscribing: true, error: null, sttProgress: null })
-    const unsubscribe = window.api.stt.onProgress((update) => set({ sttProgress: update.progress }))
-    try {
-      const transcript = await window.api.stt.run({ project })
-      set((state) => {
-        if (!state.project) return state
-        return { project: { ...state.project, transcript } }
-      })
-      await get().saveProject()
-    } catch (err) {
-      set({ error: String(err) })
-    } finally {
-      unsubscribe()
-      set({ isTranscribing: false, sttProgress: null })
-    }
-  },
-
-  setSttProvider: async (provider) => {
-    set((state) => {
-      if (!state.project) return state
-      return {
-        project: {
-          ...state.project,
-          providerConfig: {
-            ...state.project.providerConfig,
-            stt: { ...state.project.providerConfig.stt, provider }
+          return {
+            project: { ...state.project, edit: { ...state.project.edit, activeVideoIntervals } }
           }
-        }
-      }
-    })
-    await get().saveProject()
-  },
+        })
+        await get().saveProject()
+      },
 
-  setSttLanguageHint: async (languageHint) => {
-    set((state) => {
-      if (!state.project) return state
-      return {
-        project: {
-          ...state.project,
-          providerConfig: {
-            ...state.project.providerConfig,
-            stt: { ...state.project.providerConfig.stt, languageHint }
+      setPrimaryAudioAt: async (atSec, sourceId) => {
+        set((state) => {
+          if (!state.project) return state
+          const primaryAudioIntervals = insertActiveSwitch(
+            state.project.edit.primaryAudioIntervals,
+            atSec,
+            sourceId,
+            state.project.timelineDurationSec
+          )
+          return {
+            project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }
           }
-        }
-      }
-    })
-    await get().saveProject()
-  },
+        })
+        await get().saveProject()
+      },
 
-  setTranscriptionSource: async (sourceId) => {
-    set((state) => {
-      if (!state.project) return state
-      return {
-        project: {
-          ...state.project,
-          providerConfig: { ...state.project.providerConfig, transcriptionSourceClipId: sourceId }
-        }
+      splitCutAt: async (atSec) => {
+        set((state) => {
+          if (!state.project) return state
+          const existing =
+            state.project.edit.keptRanges.length > 0
+              ? state.project.edit.keptRanges
+              : initializeKeptRanges(state.project.timelineDurationSec)
+          const keptRanges = splitKeptRangeAt(existing, atSec)
+          return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+        })
+        await get().saveProject()
+      },
+
+      deleteKeptRange: async (rangeId) => {
+        set((state) => {
+          if (!state.project) return state
+          const keptRanges = removeKeptRangeFn(state.project.edit.keptRanges, rangeId)
+          return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+        })
+        await get().saveProject()
       }
-    })
-    await get().saveProject()
-  }
-}))
+    }),
+    { partialize: (state) => ({ project: state.project }), limit: 50 }
+  )
+)

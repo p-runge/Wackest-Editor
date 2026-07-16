@@ -1,6 +1,6 @@
 import { ipcMain, dialog } from 'electron'
 import { join, basename, relative, extname } from 'path'
-import { mkdir, rm } from 'fs/promises'
+import { mkdir, rm, readFile } from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
 import { probeFile, extractWaveformPeaks, extractThumbnail } from '../services/ffmpeg'
 import type { SourceClip } from '@shared/types/project'
@@ -8,7 +8,8 @@ import {
   IpcChannels,
   type IngestImportArgs,
   type IngestImportResult,
-  type IngestRemoveCacheArgs
+  type IngestRemoveCacheArgs,
+  type IngestReadWaveformResult
 } from '@shared/types/ipc'
 
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm']
@@ -96,4 +97,12 @@ export function registerIngestIpc(): void {
     await rm(join(cacheDir, `${args.sourceId}.waveform.json`), { force: true })
     await rm(join(cacheDir, `${args.sourceId}.thumb.jpg`), { force: true })
   })
+
+  ipcMain.handle(
+    IpcChannels.ingestReadWaveform,
+    async (_event, waveformCachePath: string): Promise<IngestReadWaveformResult> => {
+      const raw = await readFile(waveformCachePath, 'utf-8')
+      return JSON.parse(raw) as Array<[number, number]>
+    }
+  )
 }

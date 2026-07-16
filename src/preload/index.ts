@@ -8,12 +8,16 @@ import type {
   IngestImportArgs,
   IngestImportResult,
   IngestRemoveCacheArgs,
+  IngestReadWaveformResult,
   SyncRunArgs,
   SyncRunResult,
   SyncProgressEvent,
   SttRunArgs,
   SttRunResult,
   SttProgressEvent,
+  HeatmapRunArgs,
+  HeatmapRunResult,
+  HeatmapProgressEvent,
   SettingsGetResult,
   SettingsSetArgs,
   SettingsPickFileArgs
@@ -34,7 +38,9 @@ const api = {
     import: (args: IngestImportArgs): Promise<IngestImportResult> =>
       ipcRenderer.invoke(IpcChannels.ingestImport, args),
     removeCache: (args: IngestRemoveCacheArgs): Promise<void> =>
-      ipcRenderer.invoke(IpcChannels.ingestRemoveCache, args)
+      ipcRenderer.invoke(IpcChannels.ingestRemoveCache, args),
+    readWaveform: (waveformCachePath: string): Promise<IngestReadWaveformResult> =>
+      ipcRenderer.invoke(IpcChannels.ingestReadWaveform, waveformCachePath)
   },
   sync: {
     run: (args: SyncRunArgs): Promise<SyncRunResult> =>
@@ -51,6 +57,15 @@ const api = {
       const listener = (_event: unknown, update: SttProgressEvent): void => callback(update)
       ipcRenderer.on(IpcChannels.sttProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.sttProgress, listener)
+    }
+  },
+  heatmap: {
+    run: (args: HeatmapRunArgs): Promise<HeatmapRunResult> =>
+      ipcRenderer.invoke(IpcChannels.heatmapRun, args),
+    onProgress: (callback: (update: HeatmapProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: HeatmapProgressEvent): void => callback(update)
+      ipcRenderer.on(IpcChannels.heatmapProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.heatmapProgress, listener)
     }
   },
   settings: {

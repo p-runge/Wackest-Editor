@@ -57,6 +57,16 @@ function SettingsPanel(): React.JSX.Element {
           </label>
 
           <label className="settings-field">
+            Anthropic (Claude) API-Key
+            <input
+              type="password"
+              value={settings.anthropicApiKey ?? ''}
+              placeholder="sk-ant-..."
+              onChange={(e) => void update({ anthropicApiKey: e.target.value })}
+            />
+          </label>
+
+          <label className="settings-field">
             whisper.cpp Binary-Pfad
             <div className="settings-field__row">
               <input

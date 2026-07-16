@@ -1,7 +1,8 @@
 @import './base.css';
 
 body {
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   user-select: none;
 }
 

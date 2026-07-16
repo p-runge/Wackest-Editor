@@ -1,14 +1,15 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
-import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerProjectIpc } from './ipc/project'
 import { registerIngestIpc } from './ipc/ingest'
 import { registerSyncIpc } from './ipc/sync'
 import { registerSttIpc } from './ipc/stt'
+import { registerHeatmapIpc } from './ipc/heatmap'
 import { registerSettingsIpc } from './ipc/settings'
-import { MEDIA_URL_SCHEME, fromMediaUrl } from '@shared/types/media-url'
+import { registerMediaProtocolHandler } from './services/media-protocol'
+import { MEDIA_URL_SCHEME } from '@shared/types/media-url'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -66,15 +67,13 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  protocol.handle(MEDIA_URL_SCHEME, (request) => {
-    const filePath = fromMediaUrl(request.url)
-    return net.fetch(pathToFileURL(filePath).toString())
-  })
+  registerMediaProtocolHandler()
 
   registerProjectIpc()
   registerIngestIpc()
   registerSyncIpc()
   registerSttIpc()
+  registerHeatmapIpc()
   registerSettingsIpc()
 
   createWindow()

@@ -1,4 +1,4 @@
-import type { Project, SourceClip, TranscriptSegment } from './project'
+import type { Project, SourceClip, TranscriptSegment, HeatmapPoint } from './project'
 import type { AppSettings } from './settings'
 
 export const IpcChannels = {
@@ -9,10 +9,13 @@ export const IpcChannels = {
   ingestPickFiles: 'ingest:pick-files',
   ingestImport: 'ingest:import',
   ingestRemoveCache: 'ingest:remove-cache',
+  ingestReadWaveform: 'ingest:read-waveform',
   syncRun: 'sync:run',
   syncProgress: 'sync:progress',
   sttRun: 'stt:run',
   sttProgress: 'stt:progress',
+  heatmapRun: 'heatmap:run',
+  heatmapProgress: 'heatmap:progress',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsPickFile: 'settings:pick-file'
@@ -44,6 +47,8 @@ export interface IngestRemoveCacheArgs {
   sourceId: string
 }
 
+export type IngestReadWaveformResult = Array<[number, number]>
+
 export interface SyncRunArgs {
   sources: SourceClip[]
 }
@@ -63,6 +68,18 @@ export interface SttRunArgs {
 export type SttRunResult = TranscriptSegment[]
 
 export interface SttProgressEvent {
+  progress: number
+}
+
+export interface HeatmapRunArgs {
+  project: Project
+  projectDir: string
+  bucketSec?: number
+}
+
+export type HeatmapRunResult = HeatmapPoint[]
+
+export interface HeatmapProgressEvent {
   progress: number
 }
 
