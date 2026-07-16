@@ -1,10 +1,19 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, net } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerProjectIpc } from './ipc/project'
 import { registerIngestIpc } from './ipc/ingest'
 import { registerSyncIpc } from './ipc/sync'
+import { MEDIA_URL_SCHEME, fromMediaUrl } from '@shared/types/media-url'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: MEDIA_URL_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  }
+])
 
 function createWindow(): void {
   // Create the browser window.
@@ -54,6 +63,11 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  protocol.handle(MEDIA_URL_SCHEME, (request) => {
+    const filePath = fromMediaUrl(request.url)
+    return net.fetch(pathToFileURL(filePath).toString())
+  })
 
   registerProjectIpc()
   registerIngestIpc()

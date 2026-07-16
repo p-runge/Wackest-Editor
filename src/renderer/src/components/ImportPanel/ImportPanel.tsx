@@ -1,4 +1,5 @@
 import { useProjectStore } from '../../state/project-store'
+import { toMediaUrl } from '@shared/types/media-url'
 import './import-panel.css'
 
 function formatDuration(sec: number): string {
@@ -55,7 +56,7 @@ function ImportPanel(): React.JSX.Element {
             <li key={source.id} className="source-row">
               <div className="source-row__thumb">
                 {source.thumbnailCachePath ? (
-                  <img src={`file://${source.thumbnailCachePath}`} alt="" />
+                  <img src={toMediaUrl(source.thumbnailCachePath)} alt="" />
                 ) : (
                   <div className="source-row__thumb-placeholder">
                     {source.kind === 'audio' ? '🎙️' : '🎬'}
