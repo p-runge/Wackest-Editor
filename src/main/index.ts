@@ -6,6 +6,8 @@ import icon from '../../resources/icon.png?asset'
 import { registerProjectIpc } from './ipc/project'
 import { registerIngestIpc } from './ipc/ingest'
 import { registerSyncIpc } from './ipc/sync'
+import { registerSttIpc } from './ipc/stt'
+import { registerSettingsIpc } from './ipc/settings'
 import { MEDIA_URL_SCHEME, fromMediaUrl } from '@shared/types/media-url'
 
 protocol.registerSchemesAsPrivileged([
@@ -72,6 +74,8 @@ app.whenReady().then(() => {
   registerProjectIpc()
   registerIngestIpc()
   registerSyncIpc()
+  registerSttIpc()
+  registerSettingsIpc()
 
   createWindow()
 

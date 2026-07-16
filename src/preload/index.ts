@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, clipboard } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IpcChannels } from '@shared/types/ipc'
 import type {
@@ -10,7 +10,13 @@ import type {
   IngestRemoveCacheArgs,
   SyncRunArgs,
   SyncRunResult,
-  SyncProgressEvent
+  SyncProgressEvent,
+  SttRunArgs,
+  SttRunResult,
+  SttProgressEvent,
+  SettingsGetResult,
+  SettingsSetArgs,
+  SettingsPickFileArgs
 } from '@shared/types/ipc'
 
 const api = {
@@ -38,6 +44,24 @@ const api = {
       ipcRenderer.on(IpcChannels.syncProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.syncProgress, listener)
     }
+  },
+  stt: {
+    run: (args: SttRunArgs): Promise<SttRunResult> => ipcRenderer.invoke(IpcChannels.sttRun, args),
+    onProgress: (callback: (update: SttProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: SttProgressEvent): void => callback(update)
+      ipcRenderer.on(IpcChannels.sttProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.sttProgress, listener)
+    }
+  },
+  settings: {
+    get: (): Promise<SettingsGetResult> => ipcRenderer.invoke(IpcChannels.settingsGet),
+    set: (args: SettingsSetArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.settingsSet, args),
+    pickFile: (args: SettingsPickFileArgs): Promise<string | null> =>
+      ipcRenderer.invoke(IpcChannels.settingsPickFile, args)
+  },
+  system: {
+    copyToClipboard: (text: string): void => clipboard.writeText(text)
   }
 }
 

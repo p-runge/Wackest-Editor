@@ -114,11 +114,17 @@ export const EditStateSchema = z.object({
 })
 export type EditState = z.infer<typeof EditStateSchema>
 
+// 'auto' lets the provider auto-detect the spoken language; extendable without a schema migration
+// since it's a plain optional string, though the UI currently only offers auto/de/en.
+export const SttLanguageHintSchema = z.string().optional()
+export type SttLanguageHint = z.infer<typeof SttLanguageHintSchema>
+
 export const ProviderConfigSnapshotSchema = z.object({
   transcriptionSourceClipId: z.string().optional(),
   stt: z.object({
     provider: SttProviderIdSchema,
-    model: z.string().optional()
+    model: z.string().optional(),
+    languageHint: SttLanguageHintSchema
   }),
   heatmap: z.object({
     provider: HeatmapProviderIdSchema,
@@ -157,7 +163,7 @@ export function createEmptyProject(name: string, id: string): Project {
     heatmap: [],
     edit: { activeVideoIntervals: [], primaryAudioIntervals: [], keptRanges: [] },
     providerConfig: {
-      stt: { provider: 'openai-whisper-api' },
+      stt: { provider: 'openai-whisper-api', languageHint: 'auto' },
       heatmap: { provider: 'heuristic-local' }
     }
   }

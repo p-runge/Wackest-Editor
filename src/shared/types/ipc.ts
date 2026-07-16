@@ -1,4 +1,5 @@
-import type { Project, SourceClip } from './project'
+import type { Project, SourceClip, TranscriptSegment } from './project'
+import type { AppSettings } from './settings'
 
 export const IpcChannels = {
   projectChooseDirectory: 'project:choose-directory',
@@ -9,7 +10,12 @@ export const IpcChannels = {
   ingestImport: 'ingest:import',
   ingestRemoveCache: 'ingest:remove-cache',
   syncRun: 'sync:run',
-  syncProgress: 'sync:progress'
+  syncProgress: 'sync:progress',
+  sttRun: 'stt:run',
+  sttProgress: 'stt:progress',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set',
+  settingsPickFile: 'settings:pick-file'
 } as const
 
 export interface ProjectSaveArgs {
@@ -48,4 +54,22 @@ export interface SyncProgressEvent {
   stage: 'extracting' | 'correlating' | 'done'
   sourceLabel?: string
   progress: number
+}
+
+export interface SttRunArgs {
+  project: Project
+}
+
+export type SttRunResult = TranscriptSegment[]
+
+export interface SttProgressEvent {
+  progress: number
+}
+
+export type SettingsGetResult = AppSettings
+export type SettingsSetArgs = AppSettings
+
+export interface SettingsPickFileArgs {
+  title: string
+  extensions: string[]
 }

@@ -1,7 +1,7 @@
 import ffmpegPath from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
 import ffmpeg from 'fluent-ffmpeg'
-import { readFile, writeFile, rm } from 'fs/promises'
+import { readFile, writeFile, rm, readdir } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
@@ -105,6 +105,56 @@ export async function extractWaveformPeaks(
   await writeFile(peaksPath, JSON.stringify(peaks), 'utf-8')
   await rm(pcmPath, { force: true })
   return peaksPath
+}
+
+/** whisper.cpp requires 16kHz mono WAV input. */
+export function extractWav16kMono(filePath: string, outPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(filePath)
+      .noVideo()
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .format('wav')
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(outPath)
+  })
+}
+
+// ~20 min chunks stay well under the OpenAI API's 25MB upload limit even at higher bitrates.
+export const AUDIO_CHUNK_DURATION_SEC = 20 * 60
+
+/** Splits audio into small, upload-friendly chunks in one ffmpeg pass (segment muxer). */
+export function extractCompressedAudioChunks(filePath: string, outDir: string): Promise<string[]> {
+  const pattern = join(outDir, 'chunk-%03d.m4a')
+  return new Promise((resolve, reject) => {
+    ffmpeg(filePath)
+      .noVideo()
+      .audioChannels(1)
+      .audioBitrate('64k')
+      .outputOptions([
+        '-f',
+        'segment',
+        '-segment_time',
+        String(AUDIO_CHUNK_DURATION_SEC),
+        '-reset_timestamps',
+        '1'
+      ])
+      .on('error', reject)
+      .on('end', () => {
+        readdir(outDir)
+          .then((files) =>
+            resolve(
+              files
+                .filter((f) => f.startsWith('chunk-'))
+                .sort()
+                .map((f) => join(outDir, f))
+            )
+          )
+          .catch(reject)
+      })
+      .save(pattern)
+  })
 }
 
 export function extractThumbnail(

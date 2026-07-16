@@ -4,7 +4,8 @@ import {
   createEmptyProject,
   recomputeTimelineDuration,
   type Project,
-  type SourceClip
+  type SourceClip,
+  type SttProviderId
 } from '@shared/types/project'
 import type { SyncProgressEvent } from '@shared/types/ipc'
 
@@ -14,6 +15,8 @@ interface ProjectState {
   isImporting: boolean
   isSyncing: boolean
   syncProgress: SyncProgressEvent | null
+  isTranscribing: boolean
+  sttProgress: number | null
   error: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
@@ -22,6 +25,10 @@ interface ProjectState {
   removeSource: (sourceId: string) => Promise<void>
   runSync: () => Promise<void>
   setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
+  runStt: () => Promise<void>
+  setSttProvider: (provider: SttProviderId) => Promise<void>
+  setSttLanguageHint: (languageHint: string) => Promise<void>
+  setTranscriptionSource: (sourceId: string | undefined) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -30,6 +37,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   isImporting: false,
   isSyncing: false,
   syncProgress: null,
+  isTranscribing: false,
+  sttProgress: null,
   error: null,
 
   newProject: async () => {
@@ -146,6 +155,72 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const updated: Project = { ...state.project, sources }
       updated.timelineDurationSec = recomputeTimelineDuration(updated)
       return { project: updated }
+    })
+    await get().saveProject()
+  },
+
+  runStt: async () => {
+    const { project } = get()
+    if (!project) return
+
+    set({ isTranscribing: true, error: null, sttProgress: null })
+    const unsubscribe = window.api.stt.onProgress((update) => set({ sttProgress: update.progress }))
+    try {
+      const transcript = await window.api.stt.run({ project })
+      set((state) => {
+        if (!state.project) return state
+        return { project: { ...state.project, transcript } }
+      })
+      await get().saveProject()
+    } catch (err) {
+      set({ error: String(err) })
+    } finally {
+      unsubscribe()
+      set({ isTranscribing: false, sttProgress: null })
+    }
+  },
+
+  setSttProvider: async (provider) => {
+    set((state) => {
+      if (!state.project) return state
+      return {
+        project: {
+          ...state.project,
+          providerConfig: {
+            ...state.project.providerConfig,
+            stt: { ...state.project.providerConfig.stt, provider }
+          }
+        }
+      }
+    })
+    await get().saveProject()
+  },
+
+  setSttLanguageHint: async (languageHint) => {
+    set((state) => {
+      if (!state.project) return state
+      return {
+        project: {
+          ...state.project,
+          providerConfig: {
+            ...state.project.providerConfig,
+            stt: { ...state.project.providerConfig.stt, languageHint }
+          }
+        }
+      }
+    })
+    await get().saveProject()
+  },
+
+  setTranscriptionSource: async (sourceId) => {
+    set((state) => {
+      if (!state.project) return state
+      return {
+        project: {
+          ...state.project,
+          providerConfig: { ...state.project.providerConfig, transcriptionSourceClipId: sourceId }
+        }
+      }
     })
     await get().saveProject()
   }
