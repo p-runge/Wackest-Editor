@@ -3,6 +3,7 @@ import SyncPanel from './components/SyncPanel/SyncPanel'
 import TranscriptPanel from './components/TranscriptPanel/TranscriptPanel'
 import HeatmapPanel from './components/HeatmapPanel/HeatmapPanel'
 import TimelineEditor from './components/TimelineEditor/TimelineEditor'
+import ExportPanel from './components/ExportPanel/ExportPanel'
 import SettingsPanel from './components/SettingsPanel/SettingsPanel'
 
 function App(): React.JSX.Element {
@@ -14,6 +15,7 @@ function App(): React.JSX.Element {
       <TranscriptPanel />
       <HeatmapPanel />
       <TimelineEditor />
+      <ExportPanel />
     </>
   )
 }

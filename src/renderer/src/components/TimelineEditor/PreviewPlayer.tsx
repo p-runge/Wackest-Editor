@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import {
-  resolveIntervalAt,
+  resolveVideoSourceId,
+  resolveAudioSourceId,
   mapUnifiedTimeToLocal,
   mapLocalTimeToUnified
 } from '../../lib/timeline-edit'
@@ -23,11 +24,15 @@ function PreviewPlayer(): React.JSX.Element | null {
   const audioRef = useRef<HTMLAudioElement>(null)
 
   const activeVideoId = project
-    ? (resolveIntervalAt(project.edit.activeVideoIntervals, playheadSec)?.value ??
-      project.sources.find((s) => s.probed.hasVideo)?.id)
+    ? resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, playheadSec)
     : undefined
   const activeAudioId = project
-    ? (resolveIntervalAt(project.edit.primaryAudioIntervals, playheadSec)?.value ?? activeVideoId)
+    ? resolveAudioSourceId(
+        project.edit.primaryAudioIntervals,
+        project.sources,
+        playheadSec,
+        activeVideoId
+      )
     : undefined
 
   const videoSource = project?.sources.find((s) => s.id === activeVideoId)

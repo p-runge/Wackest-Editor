@@ -157,6 +157,91 @@ export function extractCompressedAudioChunks(filePath: string, outDir: string): 
   })
 }
 
+export interface RenderSegmentInput {
+  videoFilePath: string
+  videoInSec: number
+  audioFilePath: string
+  audioInSec: number
+  durationSec: number
+  targetWidth: number
+  targetHeight: number
+  outputPath: string
+  onProgress?: (fractionDone: number) => void
+}
+
+/**
+ * Renders one export sub-segment: trims video and audio (which may come from different source
+ * files/offsets) to the same duration, scales+letterboxes video to a consistent output resolution
+ * (sources may differ in aspect ratio, e.g. a landscape camera mixed with a portrait phone clip),
+ * and re-encodes. Re-encoding (rather than stream-copy) is required for frame-accurate trims
+ * across differently-encoded sources — see export pipeline notes.
+ */
+export function renderExportSegment(input: RenderSegmentInput): Promise<void> {
+  const scaleFilter =
+    `scale=${input.targetWidth}:${input.targetHeight}:force_original_aspect_ratio=decrease,` +
+    `pad=${input.targetWidth}:${input.targetHeight}:(ow-iw)/2:(oh-ih)/2:color=black`
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(input.videoFilePath)
+      .inputOptions(['-ss', String(input.videoInSec), '-t', String(input.durationSec)])
+      .input(input.audioFilePath)
+      .inputOptions(['-ss', String(input.audioInSec), '-t', String(input.durationSec)])
+      .outputOptions([
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:a:0',
+        '-vf',
+        scaleFilter,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2',
+        '-shortest'
+      ])
+      .on('progress', (progress) => {
+        if (progress.percent != null) {
+          input.onProgress?.(Math.max(0, Math.min(1, progress.percent / 100)))
+        }
+      })
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(input.outputPath)
+  })
+}
+
+/** Concatenates same-codec/resolution segment files (stream copy, no re-encode) into the final output. */
+export async function concatSegments(
+  segmentPaths: string[],
+  outputPath: string,
+  workDir: string
+): Promise<void> {
+  const listPath = join(workDir, 'concat-list.txt')
+  const listContent = segmentPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n')
+  await writeFile(listPath, listContent, 'utf-8')
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(listPath)
+      .inputOptions(['-f', 'concat', '-safe', '0'])
+      .outputOptions(['-c', 'copy'])
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(outputPath)
+  })
+}
+
 export function extractThumbnail(
   filePath: string,
   cacheDir: string,

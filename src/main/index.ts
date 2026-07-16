@@ -7,6 +7,7 @@ import { registerIngestIpc } from './ipc/ingest'
 import { registerSyncIpc } from './ipc/sync'
 import { registerSttIpc } from './ipc/stt'
 import { registerHeatmapIpc } from './ipc/heatmap'
+import { registerExportIpc } from './ipc/export'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMediaProtocolHandler } from './services/media-protocol'
 import { MEDIA_URL_SCHEME } from '@shared/types/media-url'
@@ -74,6 +75,7 @@ app.whenReady().then(() => {
   registerSyncIpc()
   registerSttIpc()
   registerHeatmapIpc()
+  registerExportIpc()
   registerSettingsIpc()
 
   createWindow()

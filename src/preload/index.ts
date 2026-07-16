@@ -18,6 +18,8 @@ import type {
   HeatmapRunArgs,
   HeatmapRunResult,
   HeatmapProgressEvent,
+  ExportRunArgs,
+  ExportProgressEvent,
   SettingsGetResult,
   SettingsSetArgs,
   SettingsPickFileArgs
@@ -67,6 +69,17 @@ const api = {
       ipcRenderer.on(IpcChannels.heatmapProgress, listener)
       return () => ipcRenderer.removeListener(IpcChannels.heatmapProgress, listener)
     }
+  },
+  export: {
+    chooseOutput: (): Promise<string | null> => ipcRenderer.invoke(IpcChannels.exportChooseOutput),
+    run: (args: ExportRunArgs): Promise<void> => ipcRenderer.invoke(IpcChannels.exportRun, args),
+    onProgress: (callback: (update: ExportProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: ExportProgressEvent): void => callback(update)
+      ipcRenderer.on(IpcChannels.exportProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.exportProgress, listener)
+    },
+    showInFolder: (filePath: string): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.exportShowInFolder, filePath)
   },
   settings: {
     get: (): Promise<SettingsGetResult> => ipcRenderer.invoke(IpcChannels.settingsGet),

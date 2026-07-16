@@ -16,6 +16,10 @@ export const IpcChannels = {
   sttProgress: 'stt:progress',
   heatmapRun: 'heatmap:run',
   heatmapProgress: 'heatmap:progress',
+  exportChooseOutput: 'export:choose-output',
+  exportRun: 'export:run',
+  exportProgress: 'export:progress',
+  exportShowInFolder: 'export:show-in-folder',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsPickFile: 'settings:pick-file'
@@ -80,6 +84,18 @@ export interface HeatmapRunArgs {
 export type HeatmapRunResult = HeatmapPoint[]
 
 export interface HeatmapProgressEvent {
+  progress: number
+}
+
+export interface ExportRunArgs {
+  project: Project
+  outputPath: string
+}
+
+export interface ExportProgressEvent {
+  stage: 'rendering' | 'concatenating' | 'done'
+  segmentIndex?: number
+  segmentCount?: number
   progress: number
 }
 

@@ -1,0 +1,54 @@
+.export-panel {
+  padding: 0 24px 24px;
+  color: #e6e6e6;
+}
+
+.export-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.export-panel__progress {
+  margin-bottom: 8px;
+}
+
+.export-panel__progress-label {
+  font-size: 12px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.export-panel__progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.export-panel__progress-fill {
+  height: 100%;
+  background: #78dc8c;
+  transition: width 0.2s ease;
+}
+
+.export-panel__error {
+  color: #ff8080;
+  font-size: 13px;
+}
+
+.export-panel__success {
+  font-size: 13px;
+  color: #78dc8c;
+}
+
+.export-panel__link {
+  background: none;
+  border: none;
+  color: #7fd1ff;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+}

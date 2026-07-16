@@ -9,7 +9,7 @@ import {
   type SttProviderId,
   type HeatmapProviderId
 } from '@shared/types/project'
-import type { SyncProgressEvent } from '@shared/types/ipc'
+import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
 import {
   insertActiveSwitch,
   splitKeptRangeAt,
@@ -27,6 +27,9 @@ interface ProjectState {
   sttProgress: number | null
   isScoringHeatmap: boolean
   heatmapProgress: number | null
+  isExporting: boolean
+  exportProgress: ExportProgressEvent | null
+  lastExportPath: string | null
   error: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
@@ -45,6 +48,7 @@ interface ProjectState {
   setPrimaryAudioAt: (atSec: number, sourceId: string) => Promise<void>
   splitCutAt: (atSec: number) => Promise<void>
   deleteKeptRange: (rangeId: string) => Promise<void>
+  runExport: () => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -59,6 +63,9 @@ export const useProjectStore = create<ProjectState>()(
       sttProgress: null,
       isScoringHeatmap: false,
       heatmapProgress: null,
+      isExporting: false,
+      exportProgress: null,
+      lastExportPath: null,
       error: null,
 
       newProject: async () => {
@@ -349,6 +356,28 @@ export const useProjectStore = create<ProjectState>()(
           return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
         })
         await get().saveProject()
+      },
+
+      runExport: async () => {
+        const { project } = get()
+        if (!project) return
+
+        const outputPath = await window.api.export.chooseOutput()
+        if (!outputPath) return
+
+        set({ isExporting: true, error: null, exportProgress: null, lastExportPath: null })
+        const unsubscribe = window.api.export.onProgress((update) =>
+          set({ exportProgress: update })
+        )
+        try {
+          await window.api.export.run({ project, outputPath })
+          set({ lastExportPath: outputPath })
+        } catch (err) {
+          set({ error: String(err) })
+        } finally {
+          unsubscribe()
+          set({ isExporting: false, exportProgress: null })
+        }
       }
     }),
     { partialize: (state) => ({ project: state.project }), limit: 50 }
