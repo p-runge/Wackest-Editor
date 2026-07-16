@@ -1,5 +1,7 @@
+import { FolderOpen, Rocket } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
-import './export-panel.css'
+import { Button } from '../ui/button'
+import { Progress } from '../ui/progress'
 
 function stageLabel(stage: string): string {
   switch (stage) {
@@ -22,42 +24,51 @@ function ExportPanel(): React.JSX.Element | null {
   const error = useProjectStore((state) => state.error)
   const runExport = useProjectStore((state) => state.runExport)
 
-  if (!project || project.edit.keptRanges.length === 0) return null
+  if (!project) return null
+  if (project.edit.keptRanges.length === 0) {
+    return (
+      <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        Zuerst synchronisieren, damit Bereiche zum Exportieren entstehen.
+      </p>
+    )
+  }
 
   return (
-    <div className="export-panel">
-      <header className="export-panel__header">
-        <h2>Export</h2>
-        <button disabled={isExporting} onClick={() => void runExport()}>
-          {isExporting ? 'Exportiere…' : 'Exportieren'}
-        </button>
-      </header>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Das fertige Video anhand der Schnitt-Spur rendern.
+        </p>
+        <Button disabled={isExporting} onClick={() => void runExport()}>
+          <Rocket /> {isExporting ? 'Exportiere…' : 'Exportieren'}
+        </Button>
+      </div>
 
       {isExporting && exportProgress && (
-        <div className="export-panel__progress">
-          <div className="export-panel__progress-label">
+        <div className="flex flex-col gap-1.5">
+          <div className="text-sm text-muted-foreground">
             {stageLabel(exportProgress.stage)}
             {exportProgress.segmentCount != null &&
               ` (Abschnitt ${(exportProgress.segmentIndex ?? 0) + 1}/${exportProgress.segmentCount})`}
           </div>
-          <div className="export-panel__progress-bar">
-            <div
-              className="export-panel__progress-fill"
-              style={{ width: `${Math.round(exportProgress.progress * 100)}%` }}
-            />
-          </div>
+          <Progress value={Math.round(exportProgress.progress * 100)} />
         </div>
       )}
 
-      {error && <p className="export-panel__error">{error}</p>}
+      {error && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {!isExporting && lastExportPath && (
-        <p className="export-panel__success">
-          Export fertig:{' '}
+        <p className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+          Export fertig:
           <button
-            className="export-panel__link"
+            className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
             onClick={() => void window.api.export.showInFolder(lastExportPath)}
           >
+            <FolderOpen className="size-3.5" />
             {lastExportPath}
           </button>
         </p>

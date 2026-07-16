@@ -9,13 +9,31 @@ import {
   type SttProviderId,
   type HeatmapProviderId
 } from '@shared/types/project'
+import { withRecentProject } from '@shared/types/settings'
 import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
 import {
   insertActiveSwitch,
+  moveIntervalBoundary,
   splitKeptRangeAt,
   removeKeptRange as removeKeptRangeFn,
   initializeKeptRanges
 } from '../lib/timeline-edit'
+import { useSettingsStore } from './settings-store'
+
+async function recordRecentProject(projectDir: string, name: string): Promise<void> {
+  const settingsState = useSettingsStore.getState()
+  const current = settingsState.loaded ? settingsState.settings : await window.api.settings.get()
+  const merged = {
+    ...current,
+    recentProjects: withRecentProject(current.recentProjects ?? [], {
+      projectDir,
+      name,
+      lastOpenedAt: new Date().toISOString()
+    })
+  }
+  useSettingsStore.setState({ settings: merged, loaded: true })
+  await window.api.settings.set(merged)
+}
 
 interface ProjectState {
   project: Project | null
@@ -33,6 +51,7 @@ interface ProjectState {
   error: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
+  openRecentProject: (projectDir: string) => Promise<void>
   saveProject: () => Promise<void>
   importFiles: () => Promise<void>
   removeSource: (sourceId: string) => Promise<void>
@@ -46,6 +65,8 @@ interface ProjectState {
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
   setPrimaryAudioAt: (atSec: number, sourceId: string) => Promise<void>
+  moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
+  movePrimaryAudioBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
   splitCutAt: (atSec: number) => Promise<void>
   deleteKeptRange: (rangeId: string) => Promise<void>
   runExport: () => Promise<void>
@@ -71,10 +92,11 @@ export const useProjectStore = create<ProjectState>()(
       newProject: async () => {
         const dir = await window.api.project.chooseDirectory()
         if (!dir) return
-        const name = dir.split('/').pop() ?? 'Neues Projekt'
+        const name = dir.split(/[/\\]/).pop() ?? 'Neues Projekt'
         const project = createEmptyProject(name, uuidv4())
         set({ project, projectDir: dir, error: null })
         await window.api.project.save({ projectDir: dir, project })
+        await recordRecentProject(dir, name)
       },
 
       openProject: async () => {
@@ -85,6 +107,19 @@ export const useProjectStore = create<ProjectState>()(
             projectFilePath: filePath
           })
           set({ project, projectDir, error: null })
+          await recordRecentProject(projectDir, project.name)
+        } catch (err) {
+          set({ error: String(err) })
+        }
+      },
+
+      openRecentProject: async (projectDir) => {
+        try {
+          const { project, projectDir: resolvedDir } = await window.api.project.openRecent({
+            projectDir
+          })
+          set({ project, projectDir: resolvedDir, error: null })
+          await recordRecentProject(resolvedDir, project.name)
         } catch (err) {
           set({ error: String(err) })
         }
@@ -328,6 +363,36 @@ export const useProjectStore = create<ProjectState>()(
             atSec,
             sourceId,
             state.project.timelineDurationSec
+          )
+          return {
+            project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }
+          }
+        })
+        await get().saveProject()
+      },
+
+      moveActiveVideoBoundary: async (leftIntervalId, atSec) => {
+        set((state) => {
+          if (!state.project) return state
+          const activeVideoIntervals = moveIntervalBoundary(
+            state.project.edit.activeVideoIntervals,
+            leftIntervalId,
+            atSec
+          )
+          return {
+            project: { ...state.project, edit: { ...state.project.edit, activeVideoIntervals } }
+          }
+        })
+        await get().saveProject()
+      },
+
+      movePrimaryAudioBoundary: async (leftIntervalId, atSec) => {
+        set((state) => {
+          if (!state.project) return state
+          const primaryAudioIntervals = moveIntervalBoundary(
+            state.project.edit.primaryAudioIntervals,
+            leftIntervalId,
+            atSec
           )
           return {
             project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }

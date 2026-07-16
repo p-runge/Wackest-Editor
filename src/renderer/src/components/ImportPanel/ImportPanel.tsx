@@ -1,6 +1,8 @@
+import { Film, Mic, Upload, X } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { toMediaUrl } from '@shared/types/media-url'
-import './import-panel.css'
+import { Button } from '../ui/button'
+import { Badge } from '../ui/badge'
 
 function formatDuration(sec: number): string {
   const total = Math.round(sec)
@@ -11,64 +13,62 @@ function formatDuration(sec: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
-function ImportPanel(): React.JSX.Element {
+function ImportPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
-  const projectDir = useProjectStore((state) => state.projectDir)
   const isImporting = useProjectStore((state) => state.isImporting)
   const error = useProjectStore((state) => state.error)
-  const newProject = useProjectStore((state) => state.newProject)
-  const openProject = useProjectStore((state) => state.openProject)
   const importFiles = useProjectStore((state) => state.importFiles)
   const removeSource = useProjectStore((state) => state.removeSource)
 
-  if (!project || !projectDir) {
-    return (
-      <div className="import-panel import-panel--empty">
-        <h1>Wackest Tool</h1>
-        <p>Multicam-Schnittwerkzeug: Sync, Untertitel, Highlight-Heatmap, manueller Schnitt.</p>
-        <div className="import-panel__actions">
-          <button onClick={() => void newProject()}>Neues Projekt</button>
-          <button onClick={() => void openProject()}>Projekt öffnen</button>
-        </div>
-        {error && <p className="import-panel__error">{error}</p>}
-      </div>
-    )
-  }
+  if (!project) return null
 
   return (
-    <div className="import-panel">
-      <header className="import-panel__header">
-        <h1>{project.name}</h1>
-        <button disabled={isImporting} onClick={() => void importFiles()}>
-          {isImporting ? 'Importiere…' : 'Rohspuren importieren'}
-        </button>
-      </header>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Kamera-, Mikro- und Handy-Aufnahmen importieren.
+        </p>
+        <Button disabled={isImporting} onClick={() => void importFiles()}>
+          <Upload /> {isImporting ? 'Importiere…' : 'Rohspuren importieren'}
+        </Button>
+      </div>
 
-      {error && <p className="import-panel__error">{error}</p>}
+      {error && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {project.sources.length === 0 ? (
-        <p className="import-panel__hint">
-          Noch keine Quellen importiert. Importiere Kamera-, Mikro- und Handy-Aufnahmen.
+        <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Noch keine Quellen importiert.
         </p>
       ) : (
-        <ul className="import-panel__list">
+        <ul className="flex flex-col gap-2">
           {project.sources.map((source) => (
-            <li key={source.id} className="source-row">
-              <div className="source-row__thumb">
+            <li
+              key={source.id}
+              className="flex items-center gap-3 rounded-md border border-border bg-card px-3 py-2"
+            >
+              <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
                 {source.thumbnailCachePath ? (
-                  <img src={toMediaUrl(source.thumbnailCachePath)} alt="" />
+                  <img
+                    src={toMediaUrl(source.thumbnailCachePath)}
+                    alt=""
+                    className="size-full object-cover"
+                  />
+                ) : source.kind === 'audio' ? (
+                  <Mic className="size-4 text-muted-foreground" />
                 ) : (
-                  <div className="source-row__thumb-placeholder">
-                    {source.kind === 'audio' ? '🎙️' : '🎬'}
-                  </div>
+                  <Film className="size-4 text-muted-foreground" />
                 )}
               </div>
-              <div className="source-row__meta">
-                <div className="source-row__label">{source.label}</div>
-                <div className="source-row__details">
-                  <span className={`source-row__kind source-row__kind--${source.kind}`}>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{source.label}</div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                     {source.kind === 'video' ? 'Video' : 'Audio'}
-                  </span>
+                  </Badge>
                   <span>{formatDuration(source.probed.durationSec)}</span>
                   {source.probed.width && source.probed.height && (
                     <span>
@@ -77,8 +77,9 @@ function ImportPanel(): React.JSX.Element {
                   )}
                 </div>
               </div>
-              <button
-                className="source-row__remove"
+              <Button
+                variant="ghost"
+                size="icon"
                 title="Quelle entfernen"
                 onClick={() => {
                   if (window.confirm(`"${source.label}" aus dem Projekt entfernen?`)) {
@@ -86,8 +87,8 @@ function ImportPanel(): React.JSX.Element {
                   }
                 }}
               >
-                ×
-              </button>
+                <X className="size-4" />
+              </Button>
             </li>
           ))}
         </ul>

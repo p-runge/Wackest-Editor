@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link2 } from 'lucide-react'
 import type { SourceClip } from '@shared/types/project'
 import { toMediaUrl } from '@shared/types/media-url'
 import WaveformCanvas from './WaveformCanvas'
@@ -9,6 +10,8 @@ interface SourceLaneProps {
   trackWidthPx: number
   color: string
   onClick: (atSec: number) => void
+  /** Set when this row duplicates a video source's own audio into the audio section. */
+  linkedVideoLabel?: string
 }
 
 const LANE_HEIGHT = 44
@@ -19,7 +22,8 @@ function SourceLane({
   pixelsPerSecond,
   trackWidthPx,
   color,
-  onClick
+  onClick,
+  linkedVideoLabel
 }: SourceLaneProps): React.JSX.Element {
   const [peaks, setPeaks] = useState<Array<[number, number]> | null>(null)
 
@@ -43,7 +47,15 @@ function SourceLane({
         {source.thumbnailCachePath && (
           <img className="source-lane__thumb" src={toMediaUrl(source.thumbnailCachePath)} alt="" />
         )}
-        <span>{source.label}</span>
+        <span className="truncate">{source.label}</span>
+        {linkedVideoLabel && (
+          <span
+            className="ml-auto shrink-0 text-muted-foreground"
+            title={`Ton von Video-Quelle „${linkedVideoLabel}“`}
+          >
+            <Link2 className="size-3" />
+          </span>
+        )}
       </div>
       <div className="source-lane__track" style={{ height: LANE_HEIGHT, width: trackWidthPx }}>
         {source.syncSegments.map((segment) => {

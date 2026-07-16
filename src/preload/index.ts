@@ -5,6 +5,7 @@ import type {
   ProjectSaveArgs,
   ProjectLoadArgs,
   ProjectLoadResult,
+  ProjectOpenRecentArgs,
   IngestImportArgs,
   IngestImportResult,
   IngestRemoveCacheArgs,
@@ -33,7 +34,9 @@ const api = {
       ipcRenderer.invoke(IpcChannels.projectSave, args),
     openDialog: (): Promise<string | null> => ipcRenderer.invoke(IpcChannels.projectOpenDialog),
     load: (args: ProjectLoadArgs): Promise<ProjectLoadResult> =>
-      ipcRenderer.invoke(IpcChannels.projectLoad, args)
+      ipcRenderer.invoke(IpcChannels.projectLoad, args),
+    openRecent: (args: ProjectOpenRecentArgs): Promise<ProjectLoadResult> =>
+      ipcRenderer.invoke(IpcChannels.projectOpenRecent, args)
   },
   ingest: {
     pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.ingestPickFiles),

@@ -25,7 +25,18 @@ export default defineConfig(
     },
     rules: {
       ...eslintPluginReactHooks.configs.recommended.rules,
-      ...eslintPluginReactRefresh.configs.vite.rules
+      ...eslintPluginReactRefresh.configs.vite.rules,
+      // TypeScript already enforces prop types; this rule only understands plain JS shapes
+      // and misfires on generic forwardRef<T, Props> component signatures.
+      'react/prop-types': 'off'
+    }
+  },
+  {
+    // shadcn-style primitives intentionally co-export cva variant helpers alongside the
+    // component (e.g. `buttonVariants`), which react-refresh's export-purity check disallows.
+    files: ['src/renderer/src/components/ui/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off'
     }
   },
   eslintConfigPrettier

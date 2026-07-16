@@ -6,6 +6,7 @@ export const IpcChannels = {
   projectSave: 'project:save',
   projectOpenDialog: 'project:open-dialog',
   projectLoad: 'project:load',
+  projectOpenRecent: 'project:open-recent',
   ingestPickFiles: 'ingest:pick-files',
   ingestImport: 'ingest:import',
   ingestRemoveCache: 'ingest:remove-cache',
@@ -36,6 +37,10 @@ export interface ProjectLoadArgs {
 
 export interface ProjectLoadResult {
   project: Project
+  projectDir: string
+}
+
+export interface ProjectOpenRecentArgs {
   projectDir: string
 }
 

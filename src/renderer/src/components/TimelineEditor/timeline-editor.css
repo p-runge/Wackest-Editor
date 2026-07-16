@@ -1,23 +1,21 @@
-.timeline-editor {
-  padding: 0 24px 24px;
-  color: #e6e6e6;
-}
+/* Pixel-precise lane layout for the timeline: absolutely-positioned blocks over a shared
+   time axis. Kept as plain CSS (rather than Tailwind utilities) since positions are computed
+   from seconds * pixelsPerSecond in JS and applied via inline styles. */
 
 .preview-player {
   width: 100%;
   max-width: 640px;
   aspect-ratio: 16 / 9;
   background: #000;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .preview-player--empty {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-muted-foreground);
   font-size: 13px;
 }
 
@@ -27,61 +25,10 @@
   object-fit: contain;
 }
 
-.timeline-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-.timeline-toolbar__group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.timeline-toolbar__group button.is-active {
-  background: rgba(127, 209, 255, 0.25);
-  color: #7fd1ff;
-}
-
-.timeline-toolbar__time {
-  font-variant-numeric: tabular-nums;
-  opacity: 0.8;
-  min-width: 60px;
-}
-
-.timeline-toolbar__zoom {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.timeline-toolbar__hint {
-  font-size: 12px;
-  opacity: 0.65;
-  margin: 0 0 8px;
-}
-
-.timeline-scroll {
-  overflow-x: auto;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.timeline-content {
-  position: relative;
-  padding: 4px 0;
-}
-
 .time-ruler {
   display: flex;
   height: 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .time-ruler__label {
@@ -89,7 +36,7 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  background: #1a1a1f;
+  background: var(--color-card);
 }
 
 .time-ruler__track {
@@ -102,9 +49,9 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-left: 1px solid var(--color-border);
   font-size: 10px;
-  opacity: 0.6;
+  color: var(--color-muted-foreground);
   padding-left: 3px;
   white-space: nowrap;
 }
@@ -117,7 +64,7 @@
 .cut-lane {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .source-lane__label,
@@ -135,7 +82,7 @@
   gap: 6px;
   padding: 4px 8px;
   font-size: 12px;
-  background: #1a1a1f;
+  background: var(--color-card);
   border-left: 3px solid transparent;
   overflow: hidden;
   white-space: nowrap;
@@ -176,7 +123,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #ff8080;
+  background: var(--color-destructive);
 }
 
 .interval-lane__block,
@@ -193,13 +140,14 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  cursor: pointer;
+  cursor: default;
 }
 
 .subtitle-lane__block {
   background: rgba(255, 255, 255, 0.12);
-  color: #e6e6e6;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
 }
 
 .heatmap-lane__bucket {
@@ -235,7 +183,7 @@
   border: none;
   border-radius: 50%;
   background: rgba(255, 128, 128, 0.3);
-  color: #e6e6e6;
+  color: var(--color-foreground);
   font-size: 11px;
   line-height: 1;
   margin: 2px;
@@ -251,7 +199,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #ff8080;
+  background: var(--color-destructive);
   pointer-events: none;
   z-index: 3;
 }

@@ -30,6 +30,36 @@ export function insertActiveSwitch(
   return [...before, { id: uuidv4(), startSec: atSec, endSec: timelineEnd, value }]
 }
 
+const MIN_INTERVAL_DURATION_SEC = 0.05
+
+/**
+ * Drags the shared boundary between `leftIntervalId` and its right neighbor to `atSec`,
+ * clamped so neither interval collapses below MIN_INTERVAL_DURATION_SEC. No-op if the
+ * interval has no right neighbor (i.e. it's the last one, whose end is pinned to the timeline).
+ */
+export function moveIntervalBoundary(
+  intervals: TrackInterval[],
+  leftIntervalId: string,
+  atSec: number
+): TrackInterval[] {
+  const sorted = [...intervals].sort((a, b) => a.startSec - b.startSec)
+  const index = sorted.findIndex((iv) => iv.id === leftIntervalId)
+  if (index === -1 || index === sorted.length - 1) return intervals
+
+  const left = sorted[index]
+  const right = sorted[index + 1]
+  const clamped = Math.min(
+    Math.max(atSec, left.startSec + MIN_INTERVAL_DURATION_SEC),
+    right.endSec - MIN_INTERVAL_DURATION_SEC
+  )
+
+  return intervals.map((iv) => {
+    if (iv.id === left.id) return { ...iv, endSec: clamped }
+    if (iv.id === right.id) return { ...iv, startSec: clamped }
+    return iv
+  })
+}
+
 /** Splits whichever kept range contains `atSec` into two adjacent kept ranges at that point. */
 export function splitKeptRangeAt(ranges: KeptRange[], atSec: number): KeptRange[] {
   const result: KeptRange[] = []

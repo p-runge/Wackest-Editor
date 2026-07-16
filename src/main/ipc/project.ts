@@ -1,7 +1,12 @@
 import { ipcMain, dialog } from 'electron'
-import { dirname } from 'path'
+import { dirname, join } from 'path'
 import { saveProject, loadProject } from '../services/project-store'
-import { IpcChannels, type ProjectSaveArgs, type ProjectLoadArgs } from '@shared/types/ipc'
+import {
+  IpcChannels,
+  type ProjectSaveArgs,
+  type ProjectLoadArgs,
+  type ProjectOpenRecentArgs
+} from '@shared/types/ipc'
 
 export function registerProjectIpc(): void {
   ipcMain.handle(IpcChannels.projectChooseDirectory, async () => {
@@ -30,5 +35,11 @@ export function registerProjectIpc(): void {
   ipcMain.handle(IpcChannels.projectLoad, async (_event, args: ProjectLoadArgs) => {
     const project = await loadProject(args.projectFilePath)
     return { project, projectDir: dirname(args.projectFilePath) }
+  })
+
+  ipcMain.handle(IpcChannels.projectOpenRecent, async (_event, args: ProjectOpenRecentArgs) => {
+    const projectFilePath = join(args.projectDir, 'project.json')
+    const project = await loadProject(projectFilePath)
+    return { project, projectDir: args.projectDir }
   })
 }
