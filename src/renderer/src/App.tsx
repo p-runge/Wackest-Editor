@@ -1,7 +1,7 @@
 import { useProjectStore } from './state/project-store'
 import TopBar from './components/TopBar/TopBar'
 import StartScreen from './components/StartScreen/StartScreen'
-import WorkflowPanel from './components/WorkflowPanel/WorkflowPanel'
+import ToolSidebar from './components/ToolSidebar/ToolSidebar'
 import TimelineEditor from './components/TimelineEditor/TimelineEditor'
 
 function App(): React.JSX.Element {
@@ -13,8 +13,8 @@ function App(): React.JSX.Element {
       {!project ? (
         <StartScreen />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <WorkflowPanel />
+        <div className="flex min-h-0 flex-1">
+          <ToolSidebar />
           <div className="min-h-0 flex-1">
             <TimelineEditor />
           </div>

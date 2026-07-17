@@ -4,8 +4,17 @@ import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 
 const Select = SelectPrimitive.Root
-const SelectValue = SelectPrimitive.Value
 const SelectGroup = SelectPrimitive.Group
+
+const SelectValue = ({
+  className,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Value>): React.JSX.Element => (
+  <SelectPrimitive.Value
+    className={cn('min-w-0 flex-1 truncate text-left', className)}
+    {...props}
+  />
+)
 
 const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
@@ -14,7 +23,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-input/20 px-3 py-1 text-sm shadow-sm outline-none',
+      'flex h-9 w-full items-center justify-between gap-2 overflow-hidden rounded-md border border-input bg-input/20 px-3 py-1 text-sm shadow-sm outline-none',
       'focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
       className
     )}

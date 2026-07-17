@@ -2,6 +2,7 @@ import { Captions } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import type { SttProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
+import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 function formatTime(sec: number): string {
@@ -33,14 +34,16 @@ function TranscriptPanel(): React.JSX.Element | null {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Untertitel per Spracherkennung erzeugen.</p>
-        <div className="flex flex-wrap items-center gap-2">
+      <p className="text-sm text-muted-foreground">Untertitel per Spracherkennung erzeugen.</p>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-normal text-muted-foreground">Anbieter</Label>
           <Select
             value={project.providerConfig.stt.provider}
             onValueChange={(v) => void setSttProvider(v as SttProviderId)}
           >
-            <SelectTrigger className="w-44">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -48,26 +51,32 @@ function TranscriptPanel(): React.JSX.Element | null {
               <SelectItem value="whispercpp-local">whisper.cpp (lokal)</SelectItem>
             </SelectContent>
           </Select>
+        </div>
 
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-normal text-muted-foreground">Sprache</Label>
           <Select
             value={project.providerConfig.stt.languageHint ?? 'auto'}
             onValueChange={(v) => void setSttLanguageHint(v)}
           >
-            <SelectTrigger className="w-40">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">Sprache: Automatisch</SelectItem>
-              <SelectItem value="de">Sprache: Deutsch</SelectItem>
-              <SelectItem value="en">Sprache: Englisch</SelectItem>
+              <SelectItem value="auto">Automatisch</SelectItem>
+              <SelectItem value="de">Deutsch</SelectItem>
+              <SelectItem value="en">Englisch</SelectItem>
             </SelectContent>
           </Select>
+        </div>
 
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-normal text-muted-foreground">Quelle</Label>
           <Select
             value={project.providerConfig.transcriptionSourceClipId ?? '__auto__'}
             onValueChange={(v) => void setTranscriptionSource(v === '__auto__' ? undefined : v)}
           >
-            <SelectTrigger className="w-44">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -79,15 +88,15 @@ function TranscriptPanel(): React.JSX.Element | null {
               ))}
             </SelectContent>
           </Select>
-
-          <Button disabled={isTranscribing} onClick={() => void runStt()}>
-            <Captions />
-            {isTranscribing
-              ? `Transkribiere…${sttProgress != null ? ` ${Math.round(sttProgress * 100)}%` : ''}`
-              : 'Transkribieren'}
-          </Button>
         </div>
       </div>
+
+      <Button className="w-full" disabled={isTranscribing} onClick={() => void runStt()}>
+        <Captions />
+        {isTranscribing
+          ? `Transkribiere…${sttProgress != null ? ` ${Math.round(sttProgress * 100)}%` : ''}`
+          : 'Transkribieren'}
+      </Button>
 
       {error && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

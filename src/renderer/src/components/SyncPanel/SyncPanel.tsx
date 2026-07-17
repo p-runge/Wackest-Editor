@@ -32,15 +32,14 @@ function SyncPanel(): React.JSX.Element | null {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Zeitversatz zwischen den Aufnahmen automatisch berechnen oder manuell justieren.
-        </p>
-        <Button disabled={isSyncing} onClick={() => void runSync()}>
-          <RefreshCw className={cn(isSyncing && 'animate-spin')} />
-          {isSyncing ? 'Synchronisiere…' : 'Sync starten'}
-        </Button>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Zeitversatz zwischen den Aufnahmen automatisch berechnen oder manuell justieren.
+      </p>
+
+      <Button className="w-full" disabled={isSyncing} onClick={() => void runSync()}>
+        <RefreshCw className={cn(isSyncing && 'animate-spin')} />
+        {isSyncing ? 'Synchronisiere…' : 'Sync starten'}
+      </Button>
 
       {isSyncing && syncProgress && (
         <p className="text-sm text-muted-foreground">

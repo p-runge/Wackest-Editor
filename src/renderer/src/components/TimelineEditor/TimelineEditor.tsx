@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Film, Mic, Pause, Play, Redo2, Scissors, Undo2, ZoomIn } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Film, Mic, Pause, Play, Redo2, Scissors, Undo2, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
@@ -9,6 +9,7 @@ import SubtitleLane from './SubtitleLane'
 import HeatmapLane from './HeatmapLane'
 import CutLane from './CutLane'
 import PreviewPlayer from './PreviewPlayer'
+import SourceList from './SourceList'
 import { colorForSourceId } from '../../lib/colors'
 import { LANE_LABEL_WIDTH_PX } from './constants'
 import { Button } from '../ui/button'
@@ -52,6 +53,10 @@ function TimelineEditor(): React.JSX.Element | null {
   const movePrimaryAudioBoundary = useProjectStore((state) => state.movePrimaryAudioBoundary)
   const splitCutAt = useProjectStore((state) => state.splitCutAt)
   const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
+  const importFiles = useProjectStore((state) => state.importFiles)
+  const importFromDrop = useProjectStore((state) => state.importFromDrop)
+  const isImporting = useProjectStore((state) => state.isImporting)
+  const importError = useProjectStore((state) => state.error)
 
   const pixelsPerSecond = usePlaybackStore((state) => state.pixelsPerSecond)
   const setZoom = usePlaybackStore((state) => state.setZoom)
@@ -61,13 +66,73 @@ function TimelineEditor(): React.JSX.Element | null {
   const togglePlay = usePlaybackStore((state) => state.togglePlay)
 
   const [isRazorMode, setIsRazorMode] = useState(false)
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+  const dragCounter = useRef(0)
+
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!e.dataTransfer.types.includes('Files')) return
+    dragCounter.current += 1
+    setIsDraggingOver(true)
+  }
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current = Math.max(0, dragCounter.current - 1)
+    if (dragCounter.current === 0) setIsDraggingOver(false)
+  }
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current = 0
+    setIsDraggingOver(false)
+    try {
+      const filePaths = Array.from(e.dataTransfer.files).map((file) =>
+        window.api.ingest.getPathForFile(file)
+      )
+      if (filePaths.length > 0) void importFromDrop(filePaths)
+    } catch (err) {
+      console.error('Drag&Drop-Import fehlgeschlagen', err)
+      useProjectStore.setState({ error: String(err) })
+    }
+  }
 
   if (!project) return null
 
   if (project.sources.length === 0 || project.timelineDurationSec <= 0) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        Importiere Quellen und starte die Synchronisation, um mit dem Schnitt zu beginnen.
+      <div
+        className="relative flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <p className="text-sm text-muted-foreground">
+          {project.sources.length === 0
+            ? 'Importiere Kamera-, Mikro- und Handy-Aufnahmen, um mit dem Schnitt zu beginnen.'
+            : 'Starte die Synchronisation, um mit dem Schnitt zu beginnen.'}
+        </p>
+        <Button disabled={isImporting} onClick={() => void importFiles()}>
+          <Upload /> {isImporting ? 'Importiere…' : 'Rohspuren importieren'}
+        </Button>
+        <p className="text-xs text-muted-foreground">oder Dateien hierher ziehen</p>
+        {importError && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {importError}
+          </p>
+        )}
+        {isDraggingOver && (
+          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+            Dateien hier ablegen
+          </div>
+        )}
       </div>
     )
   }
@@ -90,7 +155,13 @@ function TimelineEditor(): React.JSX.Element | null {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div
+      className="relative flex h-full flex-col overflow-hidden"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="flex flex-wrap items-start gap-4 px-4 pt-3">
         <div className="w-72 shrink-0">
           <PreviewPlayer />
@@ -242,6 +313,38 @@ function TimelineEditor(): React.JSX.Element | null {
           />
         </div>
       </div>
+
+      <div className="mx-4 mb-4 flex shrink-0 flex-col gap-2">
+        <div className="flex items-center gap-3 rounded-md border border-dashed border-border px-3 py-3">
+          <Upload className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Dateien hierher ziehen</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={isImporting}
+            onClick={() => void importFiles()}
+          >
+            <Upload className="size-3.5" /> {isImporting ? 'Importiere…' : 'Quelle hinzufügen'}
+          </Button>
+        </div>
+
+        {importError && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {importError}
+          </p>
+        )}
+
+        <div className="max-h-32 overflow-y-auto">
+          <SourceList />
+        </div>
+      </div>
+
+      {isDraggingOver && (
+        <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+          Dateien hier ablegen
+        </div>
+      )}
     </div>
   )
 }

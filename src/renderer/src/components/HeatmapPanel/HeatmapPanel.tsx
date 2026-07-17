@@ -3,6 +3,7 @@ import { useProjectStore } from '../../state/project-store'
 import { colorForScore } from '../../lib/colors'
 import type { HeatmapProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
+import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 function formatTime(sec: number): string {
@@ -33,32 +34,33 @@ function HeatmapPanel(): React.JSX.Element | null {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Interessante Abschnitte anhand des Transkripts bewerten.
-        </p>
-        <div className="flex items-center gap-2">
-          <Select
-            value={project.providerConfig.heatmap.provider}
-            onValueChange={(v) => void setHeatmapProvider(v as HeatmapProviderId)}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="heuristic-local">Lokale Heuristik</SelectItem>
-              <SelectItem value="llm-claude">Claude API</SelectItem>
-              <SelectItem value="llm-openai">OpenAI API</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button disabled={isScoringHeatmap} onClick={() => void runHeatmap()}>
-            <Flame />
-            {isScoringHeatmap
-              ? `Analysiere…${heatmapProgress != null ? ` ${Math.round(heatmapProgress * 100)}%` : ''}`
-              : 'Heatmap berechnen'}
-          </Button>
-        </div>
+      <p className="text-sm text-muted-foreground">
+        Interessante Abschnitte anhand des Transkripts bewerten.
+      </p>
+
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs font-normal text-muted-foreground">Anbieter</Label>
+        <Select
+          value={project.providerConfig.heatmap.provider}
+          onValueChange={(v) => void setHeatmapProvider(v as HeatmapProviderId)}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="heuristic-local">Lokale Heuristik</SelectItem>
+            <SelectItem value="llm-claude">Claude API</SelectItem>
+            <SelectItem value="llm-openai">OpenAI API</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      <Button className="w-full" disabled={isScoringHeatmap} onClick={() => void runHeatmap()}>
+        <Flame />
+        {isScoringHeatmap
+          ? `Analysiere…${heatmapProgress != null ? ` ${Math.round(heatmapProgress * 100)}%` : ''}`
+          : 'Heatmap berechnen'}
+      </Button>
 
       {error && (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

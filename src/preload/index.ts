@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, clipboard } from 'electron'
+import { contextBridge, ipcRenderer, clipboard, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IpcChannels } from '@shared/types/ipc'
 import type {
@@ -45,7 +45,8 @@ const api = {
     removeCache: (args: IngestRemoveCacheArgs): Promise<void> =>
       ipcRenderer.invoke(IpcChannels.ingestRemoveCache, args),
     readWaveform: (waveformCachePath: string): Promise<IngestReadWaveformResult> =>
-      ipcRenderer.invoke(IpcChannels.ingestReadWaveform, waveformCachePath)
+      ipcRenderer.invoke(IpcChannels.ingestReadWaveform, waveformCachePath),
+    getPathForFile: (file: File): string => webUtils.getPathForFile(file)
   },
   sync: {
     run: (args: SyncRunArgs): Promise<SyncRunResult> =>
