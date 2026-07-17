@@ -1,8 +1,8 @@
 import { LANE_LABEL_WIDTH_PX } from './constants'
 
 interface TimeRulerProps {
-  durationSec: number
   pixelsPerSecond: number
+  trackWidthPx: number
   onSeek: (atSec: number) => void
 }
 
@@ -22,11 +22,11 @@ function tickIntervalSec(pixelsPerSecond: number): number {
   return candidates.find((c) => c * pixelsPerSecond >= minPixelsBetweenTicks) ?? 3600
 }
 
-function TimeRuler({ durationSec, pixelsPerSecond, onSeek }: TimeRulerProps): React.JSX.Element {
+function TimeRuler({ pixelsPerSecond, trackWidthPx, onSeek }: TimeRulerProps): React.JSX.Element {
   const interval = tickIntervalSec(pixelsPerSecond)
+  const trackDurationSec = trackWidthPx / pixelsPerSecond
   const ticks: number[] = []
-  for (let t = 0; t <= durationSec; t += interval) ticks.push(t)
-  const trackWidth = durationSec * pixelsPerSecond
+  for (let t = 0; t <= trackDurationSec; t += interval) ticks.push(t)
 
   return (
     <div className="time-ruler">
@@ -34,7 +34,7 @@ function TimeRuler({ durationSec, pixelsPerSecond, onSeek }: TimeRulerProps): Re
       <div className="time-ruler__label" style={{ width: LANE_LABEL_WIDTH_PX }} />
       <div
         className="time-ruler__track"
-        style={{ width: trackWidth }}
+        style={{ width: trackWidthPx }}
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect()
           onSeek((e.clientX - rect.left) / pixelsPerSecond)

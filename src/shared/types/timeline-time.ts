@@ -29,20 +29,27 @@ export function mapUnifiedTimeToLocal(source: SourceClip, unifiedTimeSec: number
   return null
 }
 
-/** Forward mapping used to drive the playhead from a playing element's own currentTime. */
+/**
+ * Forward mapping used to drive the playhead from a playing element's own currentTime.
+ * Returns null when `localTimeSec` falls outside every sync segment — e.g. footage between two
+ * segments of the same file after a hard cut — rather than guessing via an arbitrary segment,
+ * since that footage isn't actually part of the edited timeline.
+ */
 export function mapLocalTimeToUnified(source: SourceClip, localTimeSec: number): number | null {
-  const containing = source.syncSegments.find(
+  const segment = source.syncSegments.find(
     (seg) => localTimeSec >= seg.localStartSec && localTimeSec < seg.localEndSec
   )
-  const segment = containing ?? source.syncSegments[0]
   return segment ? localTimeSec + segment.offsetSec : null
 }
 
 /**
- * Resolves which video source is active at a given unified time: an explicit interval always
- * wins; the automatic fallback (no interval set yet) must pick a source that actually has
- * footage there — "just the first video source in import order" can easily point at a source
- * whose recording hadn't started yet at that point in the unified timeline.
+ * Resolves which video source is active at a given unified time: an explicit interval wins as
+ * long as the source it names actually has footage there; an explicit switch can outlive the
+ * footage it was set against (e.g. the assigned camera's recording ends before the next switch or
+ * the timeline end), in which case falling through to the automatic fallback — which must pick a
+ * source that actually has footage there — beats freezing on a source with nothing to show.
+ * "Just the first video source in import order" can easily point at a source whose recording
+ * hadn't started yet at that point in the unified timeline, hence the coverage check there too.
  */
 export function resolveVideoSourceId(
   activeVideoIntervals: TrackInterval[],
@@ -50,14 +57,17 @@ export function resolveVideoSourceId(
   atSec: number
 ): string | undefined {
   const explicit = resolveIntervalAt(activeVideoIntervals, atSec)?.value
-  if (explicit) return explicit
+  if (explicit) {
+    const explicitSource = sources.find((s) => s.id === explicit)
+    if (explicitSource && mapUnifiedTimeToLocal(explicitSource, atSec) !== null) return explicit
+  }
   return sources.find((s) => s.probed.hasVideo && mapUnifiedTimeToLocal(s, atSec) !== null)?.id
 }
 
 /**
- * Same idea for primary audio: an explicit interval wins; otherwise prefer the resolved video
- * source's own audio if it actually covers this time, else fall back to any audio-bearing source
- * that does.
+ * Same idea for primary audio: an explicit interval wins while its source actually covers this
+ * time; otherwise prefer the resolved video source's own audio if it actually covers this time,
+ * else fall back to any audio-bearing source that does.
  */
 export function resolveAudioSourceId(
   primaryAudioIntervals: TrackInterval[],
@@ -66,7 +76,10 @@ export function resolveAudioSourceId(
   fallbackVideoSourceId: string | undefined
 ): string | undefined {
   const explicit = resolveIntervalAt(primaryAudioIntervals, atSec)?.value
-  if (explicit) return explicit
+  if (explicit) {
+    const explicitSource = sources.find((s) => s.id === explicit)
+    if (explicitSource && mapUnifiedTimeToLocal(explicitSource, atSec) !== null) return explicit
+  }
 
   const videoSource = sources.find((s) => s.id === fallbackVideoSourceId)
   if (videoSource?.probed.hasAudio && mapUnifiedTimeToLocal(videoSource, atSec) !== null) {

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Film, Mic, Pause, Play, Redo2, Scissors, Undo2, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
@@ -68,6 +68,18 @@ function TimelineEditor(): React.JSX.Element | null {
   const [isRazorMode, setIsRazorMode] = useState(false)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const dragCounter = useRef(0)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [scrollContainerWidth, setScrollContainerWidth] = useState(0)
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return undefined
+    const observer = new ResizeObserver((entries) => {
+      setScrollContainerWidth(entries[0].contentRect.width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
     e.preventDefault()
@@ -138,7 +150,8 @@ function TimelineEditor(): React.JSX.Element | null {
   }
 
   const sourceIds = project.sources.map((s) => s.id)
-  const trackWidthPx = project.timelineDurationSec * pixelsPerSecond
+  const minTrackWidthPx = Math.max(0, scrollContainerWidth - LANE_LABEL_WIDTH_PX)
+  const trackWidthPx = Math.max(project.timelineDurationSec * pixelsPerSecond, minTrackWidthPx)
   const contentWidth = LANE_LABEL_WIDTH_PX + trackWidthPx
 
   const videoSources = project.sources.filter((s) => s.kind === 'video')
@@ -224,11 +237,14 @@ function TimelineEditor(): React.JSX.Element | null {
         </div>
       </div>
 
-      <div className="mx-4 mb-4 mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border/60 bg-white/[0.02]">
+      <div
+        ref={scrollContainerRef}
+        className="mx-4 mb-4 mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border/60 bg-white/[0.02]"
+      >
         <div className="relative py-1" style={{ width: contentWidth }}>
           <TimeRuler
-            durationSec={project.timelineDurationSec}
             pixelsPerSecond={pixelsPerSecond}
+            trackWidthPx={trackWidthPx}
             onSeek={seek}
           />
 
