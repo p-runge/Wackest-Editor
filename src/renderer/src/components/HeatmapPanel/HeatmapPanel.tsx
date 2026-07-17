@@ -1,5 +1,7 @@
 import { Flame } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
+import { useSettingsStore } from '../../state/settings-store'
+import { useSettingsUIStore } from '../../state/settings-ui-store'
 import { colorForScore } from '../../lib/colors'
 import type { HeatmapProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
@@ -13,6 +15,25 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function missingSettingFor(
+  provider: HeatmapProviderId,
+  settings: { openaiApiKey?: string; anthropicApiKey?: string }
+): { message: string; fieldId: string } | null {
+  if (provider === 'llm-claude' && !settings.anthropicApiKey) {
+    return {
+      message: 'Für die Claude API wird ein Anthropic API-Key benötigt.',
+      fieldId: 'anthropic-key'
+    }
+  }
+  if (provider === 'llm-openai' && !settings.openaiApiKey) {
+    return {
+      message: 'Für die OpenAI API wird ein OpenAI API-Key benötigt.',
+      fieldId: 'openai-key'
+    }
+  }
+  return null
+}
+
 function HeatmapPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const isScoringHeatmap = useProjectStore((state) => state.isScoringHeatmap)
@@ -20,6 +41,8 @@ function HeatmapPanel(): React.JSX.Element | null {
   const error = useProjectStore((state) => state.error)
   const runHeatmap = useProjectStore((state) => state.runHeatmap)
   const setHeatmapProvider = useProjectStore((state) => state.setHeatmapProvider)
+  const settings = useSettingsStore((state) => state.settings)
+  const openSettings = useSettingsUIStore((state) => state.openSettings)
 
   if (!project) return null
   if (project.transcript.length === 0) {
@@ -31,6 +54,7 @@ function HeatmapPanel(): React.JSX.Element | null {
   }
 
   const duration = project.timelineDurationSec || 1
+  const missingSetting = missingSettingFor(project.providerConfig.heatmap.provider, settings)
 
   return (
     <div className="flex flex-col gap-3">
@@ -53,9 +77,25 @@ function HeatmapPanel(): React.JSX.Element | null {
             <SelectItem value="llm-openai">OpenAI API</SelectItem>
           </SelectContent>
         </Select>
+        {missingSetting && (
+          <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-warning">
+            {missingSetting.message}
+            <button
+              type="button"
+              className="underline-offset-2 hover:underline"
+              onClick={() => openSettings(missingSetting.fieldId)}
+            >
+              Jetzt einstellen
+            </button>
+          </p>
+        )}
       </div>
 
-      <Button className="w-full" disabled={isScoringHeatmap} onClick={() => void runHeatmap()}>
+      <Button
+        className="w-full"
+        disabled={isScoringHeatmap || !!missingSetting}
+        onClick={() => void runHeatmap()}
+      >
         <Flame />
         {isScoringHeatmap
           ? `Analysiere…${heatmapProgress != null ? ` ${Math.round(heatmapProgress * 100)}%` : ''}`

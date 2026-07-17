@@ -1,9 +1,30 @@
 import { Captions } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
+import { useSettingsStore } from '../../state/settings-store'
+import { useSettingsUIStore } from '../../state/settings-ui-store'
 import type { SttProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+
+function missingSettingFor(
+  provider: SttProviderId,
+  settings: { openaiApiKey?: string; whisperCppModelPath?: string }
+): { message: string; fieldId: string } | null {
+  if (provider === 'openai-whisper-api' && !settings.openaiApiKey) {
+    return {
+      message: 'Für OpenAI Whisper API wird ein OpenAI API-Key benötigt.',
+      fieldId: 'openai-key'
+    }
+  }
+  if (provider === 'whispercpp-local' && !settings.whisperCppModelPath) {
+    return {
+      message: 'Für whisper.cpp (lokal) wird ein Modellpfad benötigt.',
+      fieldId: 'whisper-model'
+    }
+  }
+  return null
+}
 
 function formatTime(sec: number): string {
   const total = Math.max(0, Math.round(sec))
@@ -21,6 +42,8 @@ function TranscriptPanel(): React.JSX.Element | null {
   const setSttProvider = useProjectStore((state) => state.setSttProvider)
   const setSttLanguageHint = useProjectStore((state) => state.setSttLanguageHint)
   const setTranscriptionSource = useProjectStore((state) => state.setTranscriptionSource)
+  const settings = useSettingsStore((state) => state.settings)
+  const openSettings = useSettingsUIStore((state) => state.openSettings)
 
   if (!project) return null
   const audioSources = project.sources.filter((source) => source.probed.hasAudio)
@@ -31,6 +54,8 @@ function TranscriptPanel(): React.JSX.Element | null {
       </p>
     )
   }
+
+  const missingSetting = missingSettingFor(project.providerConfig.stt.provider, settings)
 
   return (
     <div className="flex flex-col gap-3">
@@ -51,6 +76,18 @@ function TranscriptPanel(): React.JSX.Element | null {
               <SelectItem value="whispercpp-local">whisper.cpp (lokal)</SelectItem>
             </SelectContent>
           </Select>
+          {missingSetting && (
+            <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-warning">
+              {missingSetting.message}
+              <button
+                type="button"
+                className="underline-offset-2 hover:underline"
+                onClick={() => openSettings(missingSetting.fieldId)}
+              >
+                Jetzt einstellen
+              </button>
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -91,7 +128,11 @@ function TranscriptPanel(): React.JSX.Element | null {
         </div>
       </div>
 
-      <Button className="w-full" disabled={isTranscribing} onClick={() => void runStt()}>
+      <Button
+        className="w-full"
+        disabled={isTranscribing || !!missingSetting}
+        onClick={() => void runStt()}
+      >
         <Captions />
         {isTranscribing
           ? `Transkribiere…${sttProgress != null ? ` ${Math.round(sttProgress * 100)}%` : ''}`

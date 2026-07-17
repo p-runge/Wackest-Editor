@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Settings2 } from 'lucide-react'
+import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
+import { useSettingsUIStore } from '../../state/settings-ui-store'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -16,12 +18,22 @@ import {
 const BREW_INSTALL_COMMAND = 'brew install whisper-cpp'
 const WHISPER_MODELS_URL = 'https://huggingface.co/ggerganov/whisper.cpp/tree/main'
 
+function missingFieldMessage(value: string | undefined, requiredBy: string[]): string | null {
+  if (value || requiredBy.length === 0) return null
+  return `Wird benötigt für: ${requiredBy.join(', ')}.`
+}
+
 function SettingsPanel(): React.JSX.Element {
   const [copied, setCopied] = useState(false)
+  const project = useProjectStore((state) => state.project)
   const settings = useSettingsStore((state) => state.settings)
   const loaded = useSettingsStore((state) => state.loaded)
   const load = useSettingsStore((state) => state.load)
   const update = useSettingsStore((state) => state.update)
+  const isOpen = useSettingsUIStore((state) => state.isOpen)
+  const focusFieldId = useSettingsUIStore((state) => state.focusFieldId)
+  const openSettings = useSettingsUIStore((state) => state.openSettings)
+  const closeSettings = useSettingsUIStore((state) => state.closeSettings)
 
   useEffect(() => {
     if (!loaded) void load()
@@ -49,14 +61,46 @@ function SettingsPanel(): React.JSX.Element {
     if (path) await update({ whisperCppModelPath: path })
   }
 
+  const openaiKeyRequiredBy: string[] = []
+  if (project?.providerConfig.stt.provider === 'openai-whisper-api') {
+    openaiKeyRequiredBy.push('Transkription (OpenAI Whisper API)')
+  }
+  if (project?.providerConfig.heatmap.provider === 'llm-openai') {
+    openaiKeyRequiredBy.push('Heatmap (OpenAI API)')
+  }
+
+  const anthropicKeyRequiredBy: string[] = []
+  if (project?.providerConfig.heatmap.provider === 'llm-claude') {
+    anthropicKeyRequiredBy.push('Heatmap (Claude API)')
+  }
+
+  const whisperModelRequiredBy: string[] = []
+  if (project?.providerConfig.stt.provider === 'whispercpp-local') {
+    whisperModelRequiredBy.push('Transkription (whisper.cpp lokal)')
+  }
+
+  const openaiKeyMessage = missingFieldMessage(settings.openaiApiKey, openaiKeyRequiredBy)
+  const anthropicKeyMessage = missingFieldMessage(settings.anthropicApiKey, anthropicKeyRequiredBy)
+  const whisperModelMessage = missingFieldMessage(
+    settings.whisperCppModelPath,
+    whisperModelRequiredBy
+  )
+
   return (
-    <Dialog>
+    <Dialog open={isOpen} onOpenChange={(open) => (open ? openSettings() : closeSettings())}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="icon" title="Einstellungen">
           <Settings2 />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="max-w-lg"
+        onOpenAutoFocus={(e) => {
+          if (!focusFieldId) return
+          e.preventDefault()
+          document.getElementById(focusFieldId)?.focus()
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Einstellungen</DialogTitle>
           <DialogDescription>API-Keys und lokale Modelle für Transkription.</DialogDescription>
@@ -72,6 +116,7 @@ function SettingsPanel(): React.JSX.Element {
               placeholder="sk-..."
               onChange={(e) => void update({ openaiApiKey: e.target.value })}
             />
+            {openaiKeyMessage && <p className="text-xs text-warning">{openaiKeyMessage}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -83,6 +128,7 @@ function SettingsPanel(): React.JSX.Element {
               placeholder="sk-ant-..."
               onChange={(e) => void update({ anthropicApiKey: e.target.value })}
             />
+            {anthropicKeyMessage && <p className="text-xs text-warning">{anthropicKeyMessage}</p>}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -98,6 +144,10 @@ function SettingsPanel(): React.JSX.Element {
                 Durchsuchen
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Pfad zur ausführbaren whisper.cpp-Datei. Leer lassen, wenn `whisper-cli` bereits
+              systemweit auf dem PATH installiert ist.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -113,6 +163,7 @@ function SettingsPanel(): React.JSX.Element {
                 Durchsuchen
               </Button>
             </div>
+            {whisperModelMessage && <p className="text-xs text-warning">{whisperModelMessage}</p>}
           </div>
 
           <p className="text-xs leading-relaxed text-muted-foreground">
