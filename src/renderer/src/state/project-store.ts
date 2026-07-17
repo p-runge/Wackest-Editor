@@ -16,7 +16,9 @@ import {
   moveIntervalBoundary,
   splitKeptRangeAt,
   removeKeptRange as removeKeptRangeFn,
-  initializeKeptRanges
+  initializeKeptRanges,
+  resolveVideoSourceId,
+  resolveAudioSourceId
 } from '../lib/timeline-edit'
 import { useSettingsStore } from './settings-store'
 
@@ -344,8 +346,16 @@ export const useProjectStore = create<ProjectState>()(
         },
 
         setActiveVideoAt: async (atSec, sourceId) => {
+          let changed = false
           set((state) => {
             if (!state.project) return state
+            const currentActiveId = resolveVideoSourceId(
+              state.project.edit.activeVideoIntervals,
+              state.project.sources,
+              atSec
+            )
+            if (currentActiveId === sourceId) return state
+            changed = true
             const activeVideoIntervals = insertActiveSwitch(
               state.project.edit.activeVideoIntervals,
               atSec,
@@ -356,12 +366,26 @@ export const useProjectStore = create<ProjectState>()(
               project: { ...state.project, edit: { ...state.project.edit, activeVideoIntervals } }
             }
           })
-          await get().saveProject()
+          if (changed) await get().saveProject()
         },
 
         setPrimaryAudioAt: async (atSec, sourceId) => {
+          let changed = false
           set((state) => {
             if (!state.project) return state
+            const activeVideoId = resolveVideoSourceId(
+              state.project.edit.activeVideoIntervals,
+              state.project.sources,
+              atSec
+            )
+            const currentActiveAudioId = resolveAudioSourceId(
+              state.project.edit.primaryAudioIntervals,
+              state.project.sources,
+              atSec,
+              activeVideoId
+            )
+            if (currentActiveAudioId === sourceId) return state
+            changed = true
             const primaryAudioIntervals = insertActiveSwitch(
               state.project.edit.primaryAudioIntervals,
               atSec,
@@ -372,7 +396,7 @@ export const useProjectStore = create<ProjectState>()(
               project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }
             }
           })
-          await get().saveProject()
+          if (changed) await get().saveProject()
         },
 
         moveActiveVideoBoundary: async (leftIntervalId, atSec) => {

@@ -9,6 +9,7 @@ import SubtitleLane from './SubtitleLane'
 import HeatmapLane from './HeatmapLane'
 import CutLane from './CutLane'
 import PreviewPlayer from './PreviewPlayer'
+import CameraSwitcher from './CameraSwitcher'
 import SourceList from './SourceList'
 import { colorForSourceId } from '../../lib/colors'
 import { LANE_LABEL_WIDTH_PX } from './constants'
@@ -176,8 +177,16 @@ function TimelineEditor(): React.JSX.Element | null {
       onDrop={handleDrop}
     >
       <div className="flex flex-wrap items-start gap-4 px-4 pt-3">
-        <div className="w-72 shrink-0">
+        <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]">
           <PreviewPlayer />
+          <CameraSwitcher
+            project={project}
+            playheadSec={playheadSec}
+            videoSources={videoSources}
+            audioRows={audioRows}
+            setActiveVideoAt={setActiveVideoAt}
+            setPrimaryAudioAt={setPrimaryAudioAt}
+          />
         </div>
 
         <div className="flex min-w-56 flex-1 flex-col gap-2">
@@ -242,11 +251,7 @@ function TimelineEditor(): React.JSX.Element | null {
         className="mx-4 mb-4 mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border/60 bg-white/[0.02]"
       >
         <div className="relative py-1" style={{ width: contentWidth }}>
-          <TimeRuler
-            pixelsPerSecond={pixelsPerSecond}
-            trackWidthPx={trackWidthPx}
-            onSeek={seek}
-          />
+          <TimeRuler pixelsPerSecond={pixelsPerSecond} trackWidthPx={trackWidthPx} onSeek={seek} />
 
           <SectionHeader
             icon={<Film className="size-3" />}

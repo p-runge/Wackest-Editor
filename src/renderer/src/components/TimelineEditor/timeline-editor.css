@@ -4,10 +4,9 @@
 
 .preview-player {
   width: 100%;
-  max-width: 640px;
-  aspect-ratio: 16 / 9;
+  max-height: min(420px, 38vh);
+  aspect-ratio: 16 / 9; /* fallback for the empty state; the populated view sets this per-source */
   background: #000;
-  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   align-items: center;

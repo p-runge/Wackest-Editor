@@ -1,12 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
-import {
-  resolveVideoSourceId,
-  resolveAudioSourceId,
-  mapUnifiedTimeToLocal,
-  mapLocalTimeToUnified
-} from '../../lib/timeline-edit'
+import { mapUnifiedTimeToLocal, mapLocalTimeToUnified } from '../../lib/timeline-edit'
+import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { toMediaUrl } from '@shared/types/media-url'
 
 // Resync threshold: below this we trust the element's own playback clock (avoids seek jitter);
@@ -23,17 +19,7 @@ function PreviewPlayer(): React.JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  const activeVideoId = project
-    ? resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, playheadSec)
-    : undefined
-  const activeAudioId = project
-    ? resolveAudioSourceId(
-        project.edit.primaryAudioIntervals,
-        project.sources,
-        playheadSec,
-        activeVideoId
-      )
-    : undefined
+  const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
 
   const videoSource = project?.sources.find((s) => s.id === activeVideoId)
   const audioSource =
@@ -128,8 +114,14 @@ function PreviewPlayer(): React.JSX.Element | null {
     )
   }
 
+  // Match the box to the active source's actual shape (many clips here are vertical/portrait)
+  // instead of forcing a fixed 16:9 frame, which would pillarbox portrait footage down to a
+  // sliver in the middle of a mostly-black box.
+  const { width, height } = videoSource.probed
+  const aspectRatio = width && height ? `${width} / ${height}` : undefined
+
   return (
-    <div className="preview-player">
+    <div className="preview-player" style={aspectRatio ? { aspectRatio } : undefined}>
       <video
         key={videoSource.id}
         ref={videoRef}
