@@ -66,7 +66,6 @@ interface ProjectState {
   runStt: () => Promise<void>
   setSttProvider: (provider: SttProviderId) => Promise<void>
   setSttLanguageHint: (languageHint: string) => Promise<void>
-  setTranscriptionSource: (sourceId: string | undefined) => Promise<void>
   runHeatmap: () => Promise<void>
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
@@ -298,22 +297,6 @@ export const useProjectStore = create<ProjectState>()(
                 providerConfig: {
                   ...state.project.providerConfig,
                   stt: { ...state.project.providerConfig.stt, languageHint }
-                }
-              }
-            }
-          })
-          await get().saveProject()
-        },
-
-        setTranscriptionSource: async (sourceId) => {
-          set((state) => {
-            if (!state.project) return state
-            return {
-              project: {
-                ...state.project,
-                providerConfig: {
-                  ...state.project.providerConfig,
-                  transcriptionSourceClipId: sourceId
                 }
               }
             }

@@ -120,7 +120,6 @@ export const SttLanguageHintSchema = z.string().optional()
 export type SttLanguageHint = z.infer<typeof SttLanguageHintSchema>
 
 export const ProviderConfigSnapshotSchema = z.object({
-  transcriptionSourceClipId: z.string().optional(),
   stt: z.object({
     provider: SttProviderIdSchema,
     model: z.string().optional(),

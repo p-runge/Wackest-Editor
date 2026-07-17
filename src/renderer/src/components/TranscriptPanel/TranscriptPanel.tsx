@@ -42,7 +42,6 @@ function TranscriptPanel(): React.JSX.Element | null {
   const runStt = useProjectStore((state) => state.runStt)
   const setSttProvider = useProjectStore((state) => state.setSttProvider)
   const setSttLanguageHint = useProjectStore((state) => state.setSttLanguageHint)
-  const setTranscriptionSource = useProjectStore((state) => state.setTranscriptionSource)
   const settings = useSettingsStore((state) => state.settings)
   const openSettings = useSettingsUIStore((state) => state.openSettings)
 
@@ -105,26 +104,6 @@ function TranscriptPanel(): React.JSX.Element | null {
               <SelectItem value="auto">Automatisch</SelectItem>
               <SelectItem value="de">Deutsch</SelectItem>
               <SelectItem value="en">Englisch</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-normal text-muted-foreground">Quelle</Label>
-          <Select
-            value={project.providerConfig.transcriptionSourceClipId ?? '__auto__'}
-            onValueChange={(v) => void setTranscriptionSource(v === '__auto__' ? undefined : v)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__auto__">Automatisch wählen</SelectItem>
-              {audioSources.map((source) => (
-                <SelectItem key={source.id} value={source.id}>
-                  {source.label}
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
         </div>
