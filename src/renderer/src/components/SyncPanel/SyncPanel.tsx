@@ -19,6 +19,7 @@ function SyncPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const isSyncing = useProjectStore((state) => state.isSyncing)
   const syncProgress = useProjectStore((state) => state.syncProgress)
+  const error = useProjectStore((state) => state.syncError)
   const runSync = useProjectStore((state) => state.runSync)
   const setManualOffset = useProjectStore((state) => state.setManualOffset)
 
@@ -47,6 +48,12 @@ function SyncPanel(): React.JSX.Element | null {
             `Extrahiere Audio: ${syncProgress.sourceLabel ?? ''}`}
           {syncProgress.stage === 'correlating' && 'Berechne Zeitversätze…'}
           {syncProgress.stage === 'done' && 'Fertig.'}
+        </p>
+      )}
+
+      {error && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
         </p>
       )}
 

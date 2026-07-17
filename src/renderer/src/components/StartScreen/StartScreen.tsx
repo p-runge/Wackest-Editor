@@ -18,7 +18,7 @@ function formatRelativeTime(iso: string): string {
 }
 
 function StartScreen(): React.JSX.Element {
-  const error = useProjectStore((state) => state.error)
+  const error = useProjectStore((state) => state.projectError)
   const newProject = useProjectStore((state) => state.newProject)
   const openProject = useProjectStore((state) => state.openProject)
   const openRecentProject = useProjectStore((state) => state.openRecentProject)

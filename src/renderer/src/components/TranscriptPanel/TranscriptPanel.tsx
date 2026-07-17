@@ -2,6 +2,7 @@ import { Captions } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { useSettingsUIStore } from '../../state/settings-ui-store'
+import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
 import type { SttProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
@@ -37,7 +38,7 @@ function TranscriptPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const isTranscribing = useProjectStore((state) => state.isTranscribing)
   const sttProgress = useProjectStore((state) => state.sttProgress)
-  const error = useProjectStore((state) => state.error)
+  const error = useProjectStore((state) => state.sttError)
   const runStt = useProjectStore((state) => state.runStt)
   const setSttProvider = useProjectStore((state) => state.setSttProvider)
   const setSttLanguageHint = useProjectStore((state) => state.setSttLanguageHint)
@@ -56,6 +57,7 @@ function TranscriptPanel(): React.JSX.Element | null {
   }
 
   const missingSetting = missingSettingFor(project.providerConfig.stt.provider, settings)
+  const errorFieldId = error ? settingsFieldIdForErrorMessage(error) : null
 
   return (
     <div className="flex flex-col gap-3">
@@ -140,8 +142,17 @@ function TranscriptPanel(): React.JSX.Element | null {
       </Button>
 
       {error && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p className="flex flex-wrap items-center gap-x-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
+          {errorFieldId && (
+            <button
+              type="button"
+              className="underline-offset-2 hover:underline"
+              onClick={() => openSettings(errorFieldId)}
+            >
+              Jetzt einstellen
+            </button>
+          )}
         </p>
       )}
 

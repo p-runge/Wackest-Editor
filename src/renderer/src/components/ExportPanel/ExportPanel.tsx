@@ -21,7 +21,7 @@ function ExportPanel(): React.JSX.Element | null {
   const isExporting = useProjectStore((state) => state.isExporting)
   const exportProgress = useProjectStore((state) => state.exportProgress)
   const lastExportPath = useProjectStore((state) => state.lastExportPath)
-  const error = useProjectStore((state) => state.error)
+  const error = useProjectStore((state) => state.exportError)
   const runExport = useProjectStore((state) => state.runExport)
 
   if (!project) return null

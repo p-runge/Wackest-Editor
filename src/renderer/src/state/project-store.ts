@@ -48,7 +48,12 @@ interface ProjectState {
   isExporting: boolean
   exportProgress: ExportProgressEvent | null
   lastExportPath: string | null
-  error: string | null
+  projectError: string | null
+  importError: string | null
+  syncError: string | null
+  sttError: string | null
+  heatmapError: string | null
+  exportError: string | null
   newProject: () => Promise<void>
   openProject: () => Promise<void>
   openRecentProject: (projectDir: string) => Promise<void>
@@ -80,7 +85,7 @@ export const useProjectStore = create<ProjectState>()(
         const { project, projectDir } = get()
         if (!project || !projectDir || filePaths.length === 0) return
 
-        set({ isImporting: true, error: null })
+        set({ isImporting: true, importError: null })
         try {
           const newClips: SourceClip[] = await window.api.ingest.import({ filePaths, projectDir })
           set((state) => {
@@ -94,7 +99,7 @@ export const useProjectStore = create<ProjectState>()(
           })
           await get().saveProject()
         } catch (err) {
-          set({ error: String(err) })
+          set({ importError: String(err) })
         } finally {
           set({ isImporting: false })
         }
@@ -113,14 +118,19 @@ export const useProjectStore = create<ProjectState>()(
         isExporting: false,
         exportProgress: null,
         lastExportPath: null,
-        error: null,
+        projectError: null,
+        importError: null,
+        syncError: null,
+        sttError: null,
+        heatmapError: null,
+        exportError: null,
 
         newProject: async () => {
           const dir = await window.api.project.chooseDirectory()
           if (!dir) return
           const name = dir.split(/[/\\]/).pop() ?? 'Neues Projekt'
           const project = createEmptyProject(name, uuidv4())
-          set({ project, projectDir: dir, error: null })
+          set({ project, projectDir: dir, projectError: null })
           await window.api.project.save({ projectDir: dir, project })
           await recordRecentProject(dir, name)
         },
@@ -132,10 +142,10 @@ export const useProjectStore = create<ProjectState>()(
             const { project, projectDir } = await window.api.project.load({
               projectFilePath: filePath
             })
-            set({ project, projectDir, error: null })
+            set({ project, projectDir, projectError: null })
             await recordRecentProject(projectDir, project.name)
           } catch (err) {
-            set({ error: String(err) })
+            set({ projectError: String(err) })
           }
         },
 
@@ -144,10 +154,10 @@ export const useProjectStore = create<ProjectState>()(
             const { project, projectDir: resolvedDir } = await window.api.project.openRecent({
               projectDir
             })
-            set({ project, projectDir: resolvedDir, error: null })
+            set({ project, projectDir: resolvedDir, projectError: null })
             await recordRecentProject(resolvedDir, project.name)
           } catch (err) {
-            set({ error: String(err) })
+            set({ projectError: String(err) })
           }
         },
 
@@ -186,7 +196,7 @@ export const useProjectStore = create<ProjectState>()(
           try {
             await window.api.ingest.removeCache({ projectDir, sourceId })
           } catch (err) {
-            set({ error: String(err) })
+            set({ importError: String(err) })
           }
         },
 
@@ -194,7 +204,7 @@ export const useProjectStore = create<ProjectState>()(
           const { project } = get()
           if (!project || project.sources.length === 0) return
 
-          set({ isSyncing: true, error: null, syncProgress: null })
+          set({ isSyncing: true, syncError: null, syncProgress: null })
           const unsubscribe = window.api.sync.onProgress((update) => set({ syncProgress: update }))
           try {
             const updatedSources = await window.api.sync.run({ sources: project.sources })
@@ -212,7 +222,7 @@ export const useProjectStore = create<ProjectState>()(
             })
             await get().saveProject()
           } catch (err) {
-            set({ error: String(err) })
+            set({ syncError: String(err) })
           } finally {
             unsubscribe()
             set({ isSyncing: false, syncProgress: null })
@@ -244,7 +254,7 @@ export const useProjectStore = create<ProjectState>()(
           const { project } = get()
           if (!project) return
 
-          set({ isTranscribing: true, error: null, sttProgress: null })
+          set({ isTranscribing: true, sttError: null, sttProgress: null })
           const unsubscribe = window.api.stt.onProgress((update) =>
             set({ sttProgress: update.progress })
           )
@@ -256,7 +266,7 @@ export const useProjectStore = create<ProjectState>()(
             })
             await get().saveProject()
           } catch (err) {
-            set({ error: String(err) })
+            set({ sttError: String(err) })
           } finally {
             unsubscribe()
             set({ isTranscribing: false, sttProgress: null })
@@ -315,7 +325,7 @@ export const useProjectStore = create<ProjectState>()(
           const { project, projectDir } = get()
           if (!project || !projectDir) return
 
-          set({ isScoringHeatmap: true, error: null, heatmapProgress: null })
+          set({ isScoringHeatmap: true, heatmapError: null, heatmapProgress: null })
           const unsubscribe = window.api.heatmap.onProgress((update) =>
             set({ heatmapProgress: update.progress })
           )
@@ -327,7 +337,7 @@ export const useProjectStore = create<ProjectState>()(
             })
             await get().saveProject()
           } catch (err) {
-            set({ error: String(err) })
+            set({ heatmapError: String(err) })
           } finally {
             unsubscribe()
             set({ isScoringHeatmap: false, heatmapProgress: null })
@@ -441,7 +451,7 @@ export const useProjectStore = create<ProjectState>()(
           const outputPath = await window.api.export.chooseOutput()
           if (!outputPath) return
 
-          set({ isExporting: true, error: null, exportProgress: null, lastExportPath: null })
+          set({ isExporting: true, exportError: null, exportProgress: null, lastExportPath: null })
           const unsubscribe = window.api.export.onProgress((update) =>
             set({ exportProgress: update })
           )
@@ -449,7 +459,7 @@ export const useProjectStore = create<ProjectState>()(
             await window.api.export.run({ project, outputPath })
             set({ lastExportPath: outputPath })
           } catch (err) {
-            set({ error: String(err) })
+            set({ exportError: String(err) })
           } finally {
             unsubscribe()
             set({ isExporting: false, exportProgress: null })

@@ -56,7 +56,7 @@ function TimelineEditor(): React.JSX.Element | null {
   const importFiles = useProjectStore((state) => state.importFiles)
   const importFromDrop = useProjectStore((state) => state.importFromDrop)
   const isImporting = useProjectStore((state) => state.isImporting)
-  const importError = useProjectStore((state) => state.error)
+  const importError = useProjectStore((state) => state.importError)
 
   const pixelsPerSecond = usePlaybackStore((state) => state.pixelsPerSecond)
   const setZoom = usePlaybackStore((state) => state.setZoom)
@@ -99,7 +99,7 @@ function TimelineEditor(): React.JSX.Element | null {
       if (filePaths.length > 0) void importFromDrop(filePaths)
     } catch (err) {
       console.error('Drag&Drop-Import fehlgeschlagen', err)
-      useProjectStore.setState({ error: String(err) })
+      useProjectStore.setState({ importError: String(err) })
     }
   }
 
