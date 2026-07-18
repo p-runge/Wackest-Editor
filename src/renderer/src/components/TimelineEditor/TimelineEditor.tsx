@@ -4,7 +4,6 @@ import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
 import SourceLane from './SourceLane'
-import IntervalLane from './IntervalLane'
 import SubtitleLane from './SubtitleLane'
 import HeatmapLane from './HeatmapLane'
 import CutLane from './CutLane'
@@ -12,6 +11,8 @@ import PreviewPlayer from './PreviewPlayer'
 import CameraSwitcher from './CameraSwitcher'
 import SourceList from './SourceList'
 import { colorForSourceId } from '../../lib/colors'
+import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
+import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { LANE_LABEL_WIDTH_PX } from './constants'
 import { Button } from '../ui/button'
 import type { SourceClip } from '@shared/types/project'
@@ -65,6 +66,8 @@ function TimelineEditor(): React.JSX.Element | null {
   const seek = usePlaybackStore((state) => state.seek)
   const isPlaying = usePlaybackStore((state) => state.isPlaying)
   const togglePlay = usePlaybackStore((state) => state.togglePlay)
+
+  const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
 
   const [isRazorMode, setIsRazorMode] = useState(false)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
@@ -241,7 +244,7 @@ function TimelineEditor(): React.JSX.Element | null {
           <p className="text-xs text-muted-foreground">
             {isRazorMode
               ? 'Klick in die Schnitt-Spur unten: teilt den Bereich dort (zum Löschen mit ×).'
-              : 'Klick auf eine Video-Spur legt die aktive Kamera fest, Klick auf eine Audio-Spur das primäre Audio. Ziehe die Grenzen in den Übersichts-Spuren, um Schnittpunkte zu verschieben.'}
+              : 'Klick auf den Punkt in einer Spur-Beschriftung setzt sie an der aktuellen Position aktiv; Klick in die Spur selbst an der geklickten Stelle. Der aktive Bereich ist direkt auf der Spur farbig markiert — Grenzen lassen sich dort per Ziehen verschieben.'}
           </p>
         </div>
       </div>
@@ -265,17 +268,14 @@ function TimelineEditor(): React.JSX.Element | null {
               pixelsPerSecond={pixelsPerSecond}
               trackWidthPx={trackWidthPx}
               color={colorForSourceId(source.id, sourceIds)}
-              onClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
+              isActive={source.id === activeVideoId}
+              hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
+              activeIntervals={project.edit.activeVideoIntervals}
+              onSetActiveHere={() => void setActiveVideoAt(playheadSec, source.id)}
+              onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
+              onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
             />
           ))}
-          <IntervalLane
-            label="Aktive Kamera"
-            intervals={project.edit.activeVideoIntervals}
-            sources={project.sources}
-            pixelsPerSecond={pixelsPerSecond}
-            trackWidthPx={trackWidthPx}
-            onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
-          />
 
           <SectionHeader
             icon={<Mic className="size-3" />}
@@ -290,17 +290,14 @@ function TimelineEditor(): React.JSX.Element | null {
               trackWidthPx={trackWidthPx}
               color={colorForSourceId(source.id, sourceIds)}
               linkedVideoLabel={linkedVideoLabel}
-              onClick={(atSec) => void setPrimaryAudioAt(atSec, source.id)}
+              isActive={source.id === activeAudioId}
+              hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
+              activeIntervals={project.edit.primaryAudioIntervals}
+              onSetActiveHere={() => void setPrimaryAudioAt(playheadSec, source.id)}
+              onWaveformClick={(atSec) => void setPrimaryAudioAt(atSec, source.id)}
+              onMoveBoundary={(leftId, atSec) => void movePrimaryAudioBoundary(leftId, atSec)}
             />
           ))}
-          <IntervalLane
-            label="Primäres Audio"
-            intervals={project.edit.primaryAudioIntervals}
-            sources={project.sources}
-            pixelsPerSecond={pixelsPerSecond}
-            trackWidthPx={trackWidthPx}
-            onMoveBoundary={(leftId, atSec) => void movePrimaryAudioBoundary(leftId, atSec)}
-          />
 
           {project.transcript.length > 0 && (
             <SubtitleLane

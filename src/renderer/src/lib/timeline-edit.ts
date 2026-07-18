@@ -10,9 +10,14 @@ export {
 } from '@shared/types/timeline-time'
 
 /**
- * Inserts a "cut to this source from here" switch point: truncates/removes anything
- * at or after `atSec`, then appends a new interval [atSec, timelineEnd) with `value`.
- * Mirrors a live multicam switcher — later switches simply override from their point on.
+ * Inserts a "switch to this source from here" point, but only as far as the next already-
+ * existing switch — not destructively to the timeline end. This is a local split: the interval
+ * covering `atSec` (if any) is truncated to end at `atSec`, a new interval [atSec, nextStart)
+ * is inserted, and everything from `nextStart` onward (the next pre-existing switch) is left
+ * untouched. `nextStart` falls back to `timelineEnd` when there is no later switch yet, so the
+ * common forward-editing workflow (switching sequentially while scrubbing ahead) behaves exactly
+ * as before; only retroactively editing an earlier point stops wiping out later decisions.
+ * Adjacent same-value intervals are merged afterward to avoid fragmenting into needless slivers.
  */
 export function insertActiveSwitch(
   intervals: TrackInterval[],
@@ -20,14 +25,36 @@ export function insertActiveSwitch(
   value: string,
   timelineEnd: number
 ): TrackInterval[] {
-  const before = intervals
-    .filter((iv) => iv.startSec < atSec)
-    .map((iv) => (iv.endSec > atSec ? { ...iv, endSec: atSec } : iv))
-    .filter((iv) => iv.endSec > iv.startSec)
+  if (atSec >= timelineEnd) {
+    return intervals
+      .filter((iv) => iv.startSec < atSec)
+      .map((iv) => (iv.endSec > atSec ? { ...iv, endSec: atSec } : iv))
+      .filter((iv) => iv.endSec > iv.startSec)
+  }
 
-  if (atSec >= timelineEnd) return before
+  const nextStart = intervals
+    .map((iv) => iv.startSec)
+    .filter((startSec) => startSec > atSec)
+    .reduce((min, startSec) => Math.min(min, startSec), timelineEnd)
 
-  return [...before, { id: uuidv4(), startSec: atSec, endSec: timelineEnd, value }]
+  const kept = intervals
+    .map((iv) => (iv.startSec < atSec && iv.endSec > atSec ? { ...iv, endSec: atSec } : iv))
+    .filter((iv) => iv.endSec > iv.startSec && (iv.endSec <= atSec || iv.startSec >= nextStart))
+
+  const merged = [...kept, { id: uuidv4(), startSec: atSec, endSec: nextStart, value }].sort(
+    (a, b) => a.startSec - b.startSec
+  )
+
+  const result: TrackInterval[] = []
+  for (const iv of merged) {
+    const last = result[result.length - 1]
+    if (last && last.value === iv.value && last.endSec === iv.startSec) {
+      last.endSec = iv.endSec
+    } else {
+      result.push({ ...iv })
+    }
+  }
+  return result
 }
 
 const MIN_INTERVAL_DURATION_SEC = 0.05

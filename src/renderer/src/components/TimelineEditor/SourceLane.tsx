@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link2 } from 'lucide-react'
-import type { SourceClip } from '@shared/types/project'
+import type { SourceClip, TrackInterval } from '@shared/types/project'
 import { toMediaUrl } from '@shared/types/media-url'
 import WaveformCanvas from './WaveformCanvas'
 
@@ -9,23 +9,66 @@ interface SourceLaneProps {
   pixelsPerSecond: number
   trackWidthPx: number
   color: string
-  onClick: (atSec: number) => void
+  /** Whether this source is the currently-resolved active video / primary audio at the playhead. */
+  isActive: boolean
+  /** Whether this source has footage at the current playhead — disables the active-toggle if not. */
+  hasCoverage: boolean
+  /** Full activeVideoIntervals / primaryAudioIntervals array, so this lane can show exactly the
+   *  sub-ranges where it is the active source, and find its shared boundaries with neighbors. */
+  activeIntervals: TrackInterval[]
+  /** Sets this source active starting at the current playhead. */
+  onSetActiveHere: () => void
+  /** Sets this source active starting at the clicked timestamp within the waveform. */
+  onWaveformClick: (atSec: number) => void
+  /** Drags the shared boundary starting at `leftIntervalId`'s interval to `atSec`. */
+  onMoveBoundary: (leftIntervalId: string, atSec: number) => void
   /** Set when this row duplicates a video source's own audio into the audio section. */
   linkedVideoLabel?: string
 }
 
+interface BoundaryDragState {
+  leftIntervalId: string
+  minSec: number
+  maxSec: number
+  atSec: number
+}
+
 const LANE_HEIGHT = 44
 const WAVEFORM_BUCKETS_PER_SEC = 10 // must match main/services/ffmpeg.ts
+const MIN_GAP_SEC = 0.05
+
+/** Subtracts a set of (sorted, non-overlapping) ranges from a single [start, end) range. */
+function subtractRanges(
+  [start, end]: [number, number],
+  subtract: Array<[number, number]>
+): Array<[number, number]> {
+  const result: Array<[number, number]> = []
+  let cursor = start
+  for (const [s, e] of subtract) {
+    if (e <= cursor || s >= end) continue
+    const clippedStart = Math.max(s, cursor)
+    if (clippedStart > cursor) result.push([cursor, clippedStart])
+    cursor = Math.max(cursor, Math.min(e, end))
+  }
+  if (cursor < end) result.push([cursor, end])
+  return result
+}
 
 function SourceLane({
   source,
   pixelsPerSecond,
   trackWidthPx,
   color,
-  onClick,
+  isActive,
+  hasCoverage,
+  activeIntervals,
+  onSetActiveHere,
+  onWaveformClick,
+  onMoveBoundary,
   linkedVideoLabel
 }: SourceLaneProps): React.JSX.Element {
   const [peaks, setPeaks] = useState<Array<[number, number]> | null>(null)
+  const [drag, setDrag] = useState<BoundaryDragState | null>(null)
 
   useEffect(() => {
     if (!source.waveformCachePath) return undefined
@@ -41,9 +84,51 @@ function SourceLane({
     }
   }, [source.waveformCachePath])
 
+  const sorted = [...activeIntervals].sort((a, b) => a.startSec - b.startSec)
+  const ownBlocks = sorted
+    .map((iv, index) => ({ iv, index }))
+    .filter(({ iv }) => iv.value === source.id)
+
+  const startDrag = (
+    e: React.PointerEvent<HTMLDivElement>,
+    left: TrackInterval,
+    right: TrackInterval
+  ): void => {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({
+      leftIntervalId: left.id,
+      minSec: left.startSec + MIN_GAP_SEC,
+      maxSec: right.endSec - MIN_GAP_SEC,
+      atSec: left.endSec
+    })
+  }
+
+  const updateDrag = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!drag) return
+    const track = e.currentTarget.closest('.source-lane__track')
+    if (!track) return
+    const rect = track.getBoundingClientRect()
+    const atSec = (e.clientX - rect.left) / pixelsPerSecond
+    setDrag({ ...drag, atSec: Math.min(Math.max(atSec, drag.minSec), drag.maxSec) })
+  }
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!drag) return
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    onMoveBoundary(drag.leftIntervalId, drag.atSec)
+    setDrag(null)
+  }
+
   return (
-    <div className="source-lane">
-      <div className="source-lane__label" style={{ borderLeftColor: color }}>
+    <div
+      className={`source-lane${isActive ? ' source-lane--active' : ''}`}
+      style={{ '--tile-color': color } as React.CSSProperties}
+    >
+      <div
+        className={`source-lane__label${isActive ? ' source-lane__label--active' : ''}`}
+        style={{ borderLeftColor: color, '--tile-color': color } as React.CSSProperties}
+      >
         {source.thumbnailCachePath && (
           <img className="source-lane__thumb" src={toMediaUrl(source.thumbnailCachePath)} alt="" />
         )}
@@ -56,8 +141,79 @@ function SourceLane({
             <Link2 className="size-3" />
           </span>
         )}
+        <button
+          type="button"
+          className={`source-lane__active-toggle${linkedVideoLabel ? '' : ' ml-auto'}${!hasCoverage ? ' source-lane__active-toggle--disabled' : ''}`}
+          style={{ '--tile-color': color } as React.CSSProperties}
+          disabled={!hasCoverage}
+          onClick={onSetActiveHere}
+          title={
+            hasCoverage
+              ? 'Als aktiv setzen (ab aktueller Position)'
+              : 'Keine Aufnahme zu diesem Zeitpunkt'
+          }
+        />
       </div>
       <div className="source-lane__track" style={{ height: LANE_HEIGHT, width: trackWidthPx }}>
+        {ownBlocks.map(({ iv, index }) => {
+          const leftNeighbor = sorted[index - 1]
+          const displayStart =
+            drag && leftNeighbor && drag.leftIntervalId === leftNeighbor.id
+              ? drag.atSec
+              : iv.startSec
+          const displayEnd = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
+          return (
+            <div
+              key={iv.id}
+              className="source-lane__active-range"
+              style={{
+                left: displayStart * pixelsPerSecond,
+                width: Math.max(1, (displayEnd - displayStart) * pixelsPerSecond),
+                backgroundColor: color
+              }}
+              title={`Aktiv (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`}
+            />
+          )
+        })}
+
+        {ownBlocks.flatMap(({ iv, index }) => {
+          const handles: React.JSX.Element[] = []
+          const leftNeighbor = sorted[index - 1]
+          if (leftNeighbor && leftNeighbor.endSec === iv.startSec) {
+            const boundarySec =
+              drag && drag.leftIntervalId === leftNeighbor.id ? drag.atSec : iv.startSec
+            handles.push(
+              <div
+                key={`boundary-left-${iv.id}`}
+                className="group absolute top-0 z-10 -ml-1.5 h-full w-3 cursor-col-resize"
+                style={{ left: boundarySec * pixelsPerSecond }}
+                onPointerDown={(e) => startDrag(e, leftNeighbor, iv)}
+                onPointerMove={updateDrag}
+                onPointerUp={endDrag}
+              >
+                <div className="mx-auto h-full w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-foreground/70" />
+              </div>
+            )
+          }
+          const rightNeighbor = sorted[index + 1]
+          if (rightNeighbor && rightNeighbor.startSec === iv.endSec) {
+            const boundarySec = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
+            handles.push(
+              <div
+                key={`boundary-right-${iv.id}`}
+                className="group absolute top-0 z-10 -ml-1.5 h-full w-3 cursor-col-resize"
+                style={{ left: boundarySec * pixelsPerSecond }}
+                onPointerDown={(e) => startDrag(e, iv, rightNeighbor)}
+                onPointerMove={updateDrag}
+                onPointerUp={endDrag}
+              >
+                <div className="mx-auto h-full w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-foreground/70" />
+              </div>
+            )
+          }
+          return handles
+        })}
+
         {source.syncSegments.map((segment) => {
           const left = (segment.localStartSec + segment.offsetSec) * pixelsPerSecond
           const width = Math.max(1, (segment.localEndSec - segment.localStartSec) * pixelsPerSecond)
@@ -76,7 +232,7 @@ function SourceLane({
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const localOffsetSec = (e.clientX - rect.left) / pixelsPerSecond
-                onClick(segment.localStartSec + segment.offsetSec + localOffsetSec)
+                onWaveformClick(segment.localStartSec + segment.offsetSec + localOffsetSec)
               }}
             >
               {segmentPeaks.length > 0 && (
@@ -89,6 +245,26 @@ function SourceLane({
               )}
             </div>
           )
+        })}
+
+        {source.syncSegments.flatMap((segment) => {
+          const segStart = segment.localStartSec + segment.offsetSec
+          const segEnd = segment.localEndSec + segment.offsetSec
+          const activeRanges: Array<[number, number]> = ownBlocks.map(({ iv }) => [
+            iv.startSec,
+            iv.endSec
+          ])
+          const inactiveRanges = subtractRanges([segStart, segEnd], activeRanges)
+          return inactiveRanges.map(([rangeStart, rangeEnd]) => (
+            <div
+              key={`${segment.id}-inactive-${rangeStart}`}
+              className="source-lane__inactive-range"
+              style={{
+                left: rangeStart * pixelsPerSecond,
+                width: Math.max(1, (rangeEnd - rangeStart) * pixelsPerSecond)
+              }}
+            />
+          ))
         })}
 
         {source.hardCutMarkers.map((markerLocalSec) => {

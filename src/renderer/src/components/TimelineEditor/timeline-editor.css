@@ -57,17 +57,20 @@
 
 /* shared lane layout: a label column + a relatively-positioned track for absolutely-placed blocks */
 .source-lane,
-.interval-lane,
 .subtitle-lane,
 .heatmap-lane,
 .cut-lane {
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--color-border);
+  border-left: 2px solid transparent;
+}
+
+.source-lane--active {
+  border-left-color: var(--tile-color, var(--color-foreground));
 }
 
 .source-lane__label,
-.interval-lane__label,
 .subtitle-lane__label,
 .heatmap-lane__label,
 .cut-lane__label {
@@ -96,8 +99,41 @@
   flex-shrink: 0;
 }
 
+.source-lane__label--active {
+  box-shadow: inset 0 0 0 1.5px var(--tile-color);
+  border-left-width: 3px;
+}
+
+.source-lane__active-toggle {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.source-lane__active-toggle:hover {
+  border-color: var(--tile-color);
+}
+
+.source-lane__label--active .source-lane__active-toggle {
+  border-color: var(--tile-color);
+  background: var(--tile-color);
+}
+
+.source-lane__active-toggle--disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.source-lane__active-toggle--disabled:hover {
+  border-color: var(--color-muted-foreground);
+}
+
 .source-lane__track,
-.interval-lane__track,
 .subtitle-lane__track,
 .heatmap-lane__track,
 .cut-lane__track {
@@ -117,6 +153,24 @@
   overflow: hidden;
 }
 
+.source-lane__active-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+/* Dims the waveform for stretches where this source is NOT the active one, so the active
+   portion of the track stands out by contrast instead of only via the (subtle) tint above. */
+.source-lane__inactive-range {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(10, 10, 14, 0.55);
+  pointer-events: none;
+}
+
 .source-lane__hardcut {
   position: absolute;
   top: 0;
@@ -125,7 +179,6 @@
   background: var(--color-destructive);
 }
 
-.interval-lane__block,
 .subtitle-lane__block {
   position: absolute;
   top: 2px;
@@ -135,14 +188,9 @@
   align-items: center;
   padding: 0 4px;
   font-size: 11px;
-  color: #14141a;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  cursor: default;
-}
-
-.subtitle-lane__block {
   background: rgba(255, 255, 255, 0.12);
   color: var(--color-foreground);
   border: 1px solid var(--color-border);
