@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Film, Mic, Pause, Play, Redo2, Undo2, Upload, ZoomIn } from 'lucide-react'
+import { Film, Mic, Pause, Play, Redo2, SwitchCamera, Undo2, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
@@ -20,6 +20,7 @@ import {
   SIMPLE_LANE_HEIGHT_PX
 } from './constants'
 import { Button } from '../ui/button'
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
 import type { SourceClip } from '@shared/types/project'
 import './timeline-editor.css'
 
@@ -258,17 +259,28 @@ function TimelineEditor(): React.JSX.Element | null {
         </div>
       </div>
 
-      <label className="mx-4 mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-        <ZoomIn className="size-3.5" />
-        <input
-          type="range"
-          min={2}
-          max={100}
-          value={pixelsPerSecond}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="accent-primary"
-        />
-      </label>
+      <div className="mx-4 mt-2 flex items-center justify-between gap-2">
+        <Tabs defaultValue="camera-switcher">
+          <TabsList>
+            <TabsTrigger value="camera-switcher" className="gap-1.5">
+              <SwitchCamera className="size-3.5" />
+              Kamerawechsler
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <ZoomIn className="size-3.5" />
+          <input
+            type="range"
+            min={2}
+            max={100}
+            value={pixelsPerSecond}
+            onChange={(e) => setZoom(Number(e.target.value))}
+            className="accent-primary"
+          />
+        </label>
+      </div>
 
       <div className="mx-4 mb-4 mt-1 flex min-h-0 flex-1 overflow-hidden rounded-md border border-border/60 bg-white/[0.02]">
         <div ref={sidebarScrollRef} className="timeline-sidebar" onScroll={handleSidebarScroll}>
