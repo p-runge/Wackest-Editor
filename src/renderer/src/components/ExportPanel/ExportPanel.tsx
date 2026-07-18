@@ -36,7 +36,7 @@ function ExportPanel(): React.JSX.Element | null {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        Das fertige Video anhand der Schnitt-Spur rendern.
+        Das fertige Video anhand der aktiven Video-/Audio-Bereiche rendern.
       </p>
 
       <Button className="w-full" disabled={isExporting} onClick={() => void runExport()}>

@@ -14,8 +14,6 @@ import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
 import {
   insertActiveSwitch,
   moveIntervalBoundary,
-  splitKeptRangeAt,
-  removeKeptRange as removeKeptRangeFn,
   initializeKeptRanges,
   resolveVideoSourceId,
   resolveAudioSourceId
@@ -75,8 +73,6 @@ interface ProjectState {
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
   moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
   moveActiveAudioBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
-  splitCutAt: (atSec: number) => Promise<void>
-  deleteKeptRange: (rangeId: string) => Promise<void>
   runExport: () => Promise<void>
 }
 
@@ -431,28 +427,6 @@ export const useProjectStore = create<ProjectState>()(
             return {
               project: { ...state.project, edit: { ...state.project.edit, activeAudioIntervals } }
             }
-          })
-          await get().saveProject()
-        },
-
-        splitCutAt: async (atSec) => {
-          set((state) => {
-            if (!state.project) return state
-            const existing =
-              state.project.edit.keptRanges.length > 0
-                ? state.project.edit.keptRanges
-                : initializeKeptRanges(state.project.timelineDurationSec)
-            const keptRanges = splitKeptRangeAt(existing, atSec)
-            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
-          })
-          await get().saveProject()
-        },
-
-        deleteKeptRange: async (rangeId) => {
-          set((state) => {
-            if (!state.project) return state
-            const keptRanges = removeKeptRangeFn(state.project.edit.keptRanges, rangeId)
-            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
           })
           await get().saveProject()
         },

@@ -135,24 +135,6 @@ export function moveIntervalBoundary(
   return result
 }
 
-/** Splits whichever kept range contains `atSec` into two adjacent kept ranges at that point. */
-export function splitKeptRangeAt(ranges: KeptRange[], atSec: number): KeptRange[] {
-  const result: KeptRange[] = []
-  for (const range of ranges) {
-    if (atSec > range.startSec && atSec < range.endSec) {
-      result.push({ ...range, id: uuidv4(), endSec: atSec })
-      result.push({ ...range, id: uuidv4(), startSec: atSec })
-    } else {
-      result.push(range)
-    }
-  }
-  return result
-}
-
-export function removeKeptRange(ranges: KeptRange[], rangeId: string): KeptRange[] {
-  return ranges.filter((r) => r.id !== rangeId)
-}
-
 /** Fresh project (or one where sync just changed the duration): one kept range spanning everything. */
 export function initializeKeptRanges(timelineDurationSec: number): KeptRange[] {
   if (timelineDurationSec <= 0) return []

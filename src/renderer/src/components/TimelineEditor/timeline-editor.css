@@ -216,8 +216,7 @@
 
 .source-lane__track,
 .subtitle-lane__track,
-.heatmap-lane__track,
-.cut-lane__track {
+.heatmap-lane__track {
   position: relative;
   border-bottom: 1px solid var(--color-border);
 }
@@ -282,43 +281,6 @@
   top: 2px;
   bottom: 2px;
   border-right: 1px solid rgba(0, 0, 0, 0.15);
-}
-
-.cut-lane__track {
-  cursor: pointer;
-  background: rgba(255, 128, 128, 0.05);
-}
-
-.cut-lane__track--razor {
-  cursor: col-resize;
-}
-
-.cut-lane__block {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  background: rgba(120, 220, 140, 0.25);
-  border: 1px solid rgba(120, 220, 140, 0.4);
-  border-radius: 3px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.cut-lane__delete {
-  width: 16px;
-  height: 16px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 128, 128, 0.3);
-  color: var(--color-foreground);
-  font-size: 11px;
-  line-height: 1;
-  margin: 2px;
-  cursor: pointer;
-}
-
-.cut-lane__delete:hover {
-  background: rgba(255, 128, 128, 0.6);
 }
 
 .timeline-playhead {

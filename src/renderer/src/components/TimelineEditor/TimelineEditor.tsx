@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Film, Mic, Pause, Play, Redo2, Scissors, Undo2, Upload, ZoomIn } from 'lucide-react'
+import { Film, Mic, Pause, Play, Redo2, Undo2, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
@@ -8,7 +8,6 @@ import SourceLaneTrack from './SourceLaneTrack'
 import LaneLabel from './LaneLabel'
 import SubtitleLaneTrack from './SubtitleLaneTrack'
 import HeatmapLaneTrack from './HeatmapLaneTrack'
-import CutLaneTrack from './CutLaneTrack'
 import PreviewPlayer from './PreviewPlayer'
 import CameraSwitcher from './CameraSwitcher'
 import { colorForSourceId } from '../../lib/colors'
@@ -70,8 +69,6 @@ function TimelineEditor(): React.JSX.Element | null {
   const setActiveAudioAt = useProjectStore((state) => state.setActiveAudioAt)
   const moveActiveVideoBoundary = useProjectStore((state) => state.moveActiveVideoBoundary)
   const moveActiveAudioBoundary = useProjectStore((state) => state.moveActiveAudioBoundary)
-  const splitCutAt = useProjectStore((state) => state.splitCutAt)
-  const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
   const importFiles = useProjectStore((state) => state.importFiles)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importError = useProjectStore((state) => state.importError)
@@ -85,7 +82,6 @@ function TimelineEditor(): React.JSX.Element | null {
 
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
 
-  const [isRazorMode, setIsRazorMode] = useState(false)
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
   const isSyncingScrollRef = useRef(false)
@@ -213,11 +209,6 @@ function TimelineEditor(): React.JSX.Element | null {
       linkedVideoLabel: source.kind === 'video' ? source.label : undefined
     }))
 
-  const handleCutLaneClick = (atSec: number): void => {
-    if (isRazorMode) void splitCutAt(atSec)
-    else seek(atSec)
-  }
-
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       <div className="flex flex-wrap items-start gap-4 px-4 pt-3">
@@ -235,17 +226,6 @@ function TimelineEditor(): React.JSX.Element | null {
 
         <div className="flex min-w-56 flex-1 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={isRazorMode ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setIsRazorMode((v) => !v)}
-              title="Klick in die Schnitt-Spur teilt dort"
-            >
-              <Scissors /> Schnitt
-            </Button>
-
-            <div className="mx-1 h-5 w-px bg-border" />
-
             <Button
               variant="ghost"
               size="icon"
@@ -271,9 +251,9 @@ function TimelineEditor(): React.JSX.Element | null {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            {isRazorMode
-              ? 'Klick in die Schnitt-Spur unten: teilt den Bereich dort (zum Löschen mit ×).'
-              : 'Klick auf den Punkt in einer Spur-Beschriftung setzt sie an der aktuellen Position aktiv; Klick in die Spur selbst an der geklickten Stelle. Der aktive Bereich ist direkt auf der Spur farbig markiert — Grenzen lassen sich dort per Ziehen verschieben.'}
+            Klick auf den Punkt in einer Spur-Beschriftung setzt sie an der aktuellen Position
+            aktiv; Klick in die Spur selbst an der geklickten Stelle. Der aktive Bereich ist direkt
+            auf der Spur farbig markiert — Grenzen lassen sich dort per Ziehen verschieben.
           </p>
         </div>
       </div>
@@ -329,7 +309,6 @@ function TimelineEditor(): React.JSX.Element | null {
           {project.heatmap.length > 0 && (
             <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Heatmap</LaneLabel>
           )}
-          <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Schnitt</LaneLabel>
           <div style={{ height: BOTTOM_SPACER_PX }} />
         </div>
 
@@ -394,15 +373,6 @@ function TimelineEditor(): React.JSX.Element | null {
                   trackWidthPx={trackWidthPx}
                 />
               )}
-
-              <CutLaneTrack
-                keptRanges={project.edit.keptRanges}
-                pixelsPerSecond={pixelsPerSecond}
-                trackWidthPx={trackWidthPx}
-                isRazorMode={isRazorMode}
-                onClick={handleCutLaneClick}
-                onDelete={(rangeId) => void deleteKeptRange(rangeId)}
-              />
 
               <div style={{ height: BOTTOM_SPACER_PX }} />
               <div className="timeline-playhead" style={{ left: playheadLeftPx }} />
