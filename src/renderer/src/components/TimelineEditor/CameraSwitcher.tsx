@@ -191,7 +191,7 @@ function CameraSwitcher({
   }, [videoSources, audioRows, handleCameraSelect, handleAudioSelect])
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border/60 bg-background/40 p-2.5">
+    <div className="flex flex-col gap-2 p-2.5">
       <SwitcherRow
         icon={<Film className="size-3.5" />}
         items={videoSources.map((s) => ({ id: s.id, label: s.label, hasCoverage: hasCoverage(s) }))}

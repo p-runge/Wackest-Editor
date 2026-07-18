@@ -114,14 +114,11 @@ function PreviewPlayer(): React.JSX.Element | null {
     )
   }
 
-  // Match the box to the active source's actual shape (many clips here are vertical/portrait)
-  // instead of forcing a fixed 16:9 frame, which would pillarbox portrait footage down to a
-  // sliver in the middle of a mostly-black box.
-  const { width, height } = videoSource.probed
-  const aspectRatio = width && height ? `${width} / ${height}` : undefined
-
+  // Fixed 16:9 frame (see .preview-player in timeline-editor.css), regardless of the active
+  // source's native shape. Portrait/non-16:9 footage letterboxes/pillarboxes via object-fit:
+  // contain on .preview-player__video instead of the box resizing to match each source.
   return (
-    <div className="preview-player" style={aspectRatio ? { aspectRatio } : undefined}>
+    <div className="preview-player">
       <video
         key={videoSource.id}
         ref={videoRef}

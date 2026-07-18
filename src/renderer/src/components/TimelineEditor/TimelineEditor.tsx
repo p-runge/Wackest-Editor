@@ -24,6 +24,10 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
 import type { SourceClip } from '@shared/types/project'
 import './timeline-editor.css'
 
+const PREVIEW_MIN_WIDTH_PX = 280
+const PREVIEW_MAX_WIDTH_PX = 960
+const PREVIEW_DEFAULT_WIDTH_PX = 480
+
 function formatTime(sec: number): string {
   const total = Math.max(0, Math.round(sec))
   const h = Math.floor(total / 3600)
@@ -89,6 +93,8 @@ function TimelineEditor(): React.JSX.Element | null {
   const [bodyWidth, setBodyWidth] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
   const hscrollDragRef = useRef<{ startClientX: number; startScrollLeft: number } | null>(null)
+  const [previewWidthPx, setPreviewWidthPx] = useState(PREVIEW_DEFAULT_WIDTH_PX)
+  const previewResizeDragRef = useRef<{ startClientX: number; startWidthPx: number } | null>(null)
 
   useEffect(() => {
     const el = bodyScrollRef.current
@@ -202,6 +208,24 @@ function TimelineEditor(): React.JSX.Element | null {
     )
   }
 
+  const handlePreviewResizePointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    previewResizeDragRef.current = { startClientX: e.clientX, startWidthPx: previewWidthPx }
+  }
+
+  const handlePreviewResizePointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = previewResizeDragRef.current
+    if (!drag) return
+    const next = drag.startWidthPx + (e.clientX - drag.startClientX)
+    setPreviewWidthPx(Math.min(PREVIEW_MAX_WIDTH_PX, Math.max(PREVIEW_MIN_WIDTH_PX, next)))
+  }
+
+  const handlePreviewResizePointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (previewResizeDragRef.current) e.currentTarget.releasePointerCapture(e.pointerId)
+    previewResizeDragRef.current = null
+  }
+
   const videoSources = project.sources.filter((s) => s.kind === 'video')
   const audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }> = project.sources
     .filter((s) => s.kind === 'audio' || (s.kind === 'video' && s.probed.hasAudio))
@@ -212,24 +236,17 @@ function TimelineEditor(): React.JSX.Element | null {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
-      <div className="flex flex-wrap items-start gap-4 px-4 pt-3">
-        <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]">
+      <div className="flex flex-wrap items-start px-4 pt-3">
+        <div
+          className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]"
+          style={{ width: previewWidthPx, maxWidth: '100%' }}
+        >
           <PreviewPlayer />
-          <CameraSwitcher
-            project={project}
-            playheadSec={playheadSec}
-            videoSources={videoSources}
-            audioRows={audioRows}
-            setActiveVideoAt={setActiveVideoAt}
-            setActiveAudioAt={setActiveAudioAt}
-          />
-        </div>
-
-        <div className="flex min-w-56 flex-1 flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 border-t border-border/60 bg-background/40 px-2 py-1.5">
             <Button
               variant="ghost"
               size="icon"
+              className="size-7"
               onClick={() => useProjectStore.temporal.getState().undo()}
               title="Rückgängig"
             >
@@ -238,24 +255,40 @@ function TimelineEditor(): React.JSX.Element | null {
             <Button
               variant="ghost"
               size="icon"
+              className="size-7"
               onClick={() => useProjectStore.temporal.getState().redo()}
               title="Wiederholen"
             >
               <Redo2 />
             </Button>
-            <Button variant="ghost" size="icon" onClick={togglePlay}>
+            <Button variant="ghost" size="icon" className="size-7" onClick={togglePlay}>
               {isPlaying ? <Pause /> : <Play />}
             </Button>
-            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
               {formatTime(playheadSec)}
             </span>
           </div>
+        </div>
 
-          <p className="text-xs text-muted-foreground">
-            Klick auf den Punkt in einer Spur-Beschriftung setzt sie an der aktuellen Position
-            aktiv; Klick in die Spur selbst an der geklickten Stelle. Der aktive Bereich ist direkt
-            auf der Spur farbig markiert — Grenzen lassen sich dort per Ziehen verschieben.
-          </p>
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={handlePreviewResizePointerDown}
+          onPointerMove={handlePreviewResizePointerMove}
+          onPointerUp={handlePreviewResizePointerUp}
+          title="Vorschau-Breite ziehen"
+          className="mx-1.5 w-1.5 shrink-0 cursor-col-resize self-stretch rounded-full bg-border/40 transition-colors hover:bg-border active:bg-primary/50"
+        />
+
+        <div className="flex min-w-56 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]">
+          <CameraSwitcher
+            project={project}
+            playheadSec={playheadSec}
+            videoSources={videoSources}
+            audioRows={audioRows}
+            setActiveVideoAt={setActiveVideoAt}
+            setActiveAudioAt={setActiveAudioAt}
+          />
         </div>
       </div>
 

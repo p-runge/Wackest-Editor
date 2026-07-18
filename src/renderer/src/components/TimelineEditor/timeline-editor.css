@@ -12,8 +12,12 @@
 
 .preview-player {
   width: 100%;
-  max-height: min(420px, 38vh);
-  aspect-ratio: 16 / 9; /* fallback for the empty state; the populated view sets this per-source */
+  /* Ceiling raised alongside PREVIEW_MAX_WIDTH_PX in TimelineEditor.tsx (960px wide -> 540px tall
+     at 16:9) — must stay >= that value or dragging the resize handle wide stops growing the
+     visible video (height caps out while width keeps growing, letterboxing it for no reason). */
+  max-height: min(640px, 55vh);
+  aspect-ratio: 16 / 9; /* fixed frame: every source letterboxes/pillarboxes into this via
+    object-fit: contain on .preview-player__video, rather than the box matching each source */
   background: #000;
   overflow: hidden;
   display: flex;
