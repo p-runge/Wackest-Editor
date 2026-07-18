@@ -1,20 +1,20 @@
-import { useState } from 'react'
-import { RefreshCw, FileText, Flame, Download, PanelLeftClose } from 'lucide-react'
+import { Files, Loader2, RefreshCw, FileText, Flame, Download, PanelLeftClose } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
+import { useToolSidebarStore, type ToolId } from '../../state/tool-sidebar-store'
 import { Button } from '../ui/button'
 import { cn } from '@renderer/lib/utils'
+import FilesPanel from '../FilesPanel/FilesPanel'
 import SyncPanel from '../SyncPanel/SyncPanel'
 import TranscriptPanel from '../TranscriptPanel/TranscriptPanel'
 import HeatmapPanel from '../HeatmapPanel/HeatmapPanel'
 import ExportPanel from '../ExportPanel/ExportPanel'
-
-type ToolId = 'sync' | 'transcript' | 'heatmap' | 'export'
 
 const TOOLS: Array<{
   id: ToolId
   label: string
   icon: React.ComponentType<{ className?: string }>
 }> = [
+  { id: 'files', label: 'Dateien', icon: Files },
   { id: 'sync', label: 'Sync', icon: RefreshCw },
   { id: 'transcript', label: 'Transkript', icon: FileText },
   { id: 'heatmap', label: 'Heatmap', icon: Flame },
@@ -33,16 +33,20 @@ function StepDot({ done }: { done: boolean }): React.JSX.Element {
 function ToolSidebar(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const lastExportPath = useProjectStore((state) => state.lastExportPath)
-  const [activeTool, setActiveTool] = useState<ToolId | null>('sync')
+  const isImporting = useProjectStore((state) => state.isImporting)
+  const activeTool = useToolSidebarStore((state) => state.activeTool)
+  const setActiveTool = useToolSidebarStore((state) => state.setActiveTool)
 
   if (!project) return null
 
+  const hasFiles = project.sources.length > 0
   const isSynced = project.sources.some((s) => s.syncSegments.length > 0)
   const hasTranscript = project.transcript.length > 0
   const hasHeatmap = project.heatmap.length > 0
   const hasExported = !!lastExportPath
 
   const doneById: Record<ToolId, boolean> = {
+    files: hasFiles,
     sync: isSynced,
     transcript: hasTranscript,
     heatmap: hasHeatmap,
@@ -62,9 +66,13 @@ function ToolSidebar(): React.JSX.Element | null {
               'relative flex-col gap-0.5',
               activeTool === id && 'bg-accent text-accent-foreground'
             )}
-            onClick={() => setActiveTool((current) => (current === id ? null : id))}
+            onClick={() => setActiveTool(activeTool === id ? null : id)}
           >
-            <Icon className="size-4" />
+            {id === 'files' && isImporting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Icon className="size-4" />
+            )}
             <StepDot done={doneById[id]} />
           </Button>
         ))}
@@ -87,6 +95,7 @@ function ToolSidebar(): React.JSX.Element | null {
             </Button>
           </div>
           <div className="h-full overflow-y-auto px-3 pb-3 pt-3">
+            {activeTool === 'files' && <FilesPanel />}
             {activeTool === 'sync' && <SyncPanel />}
             {activeTool === 'transcript' && <TranscriptPanel />}
             {activeTool === 'heatmap' && <HeatmapPanel />}

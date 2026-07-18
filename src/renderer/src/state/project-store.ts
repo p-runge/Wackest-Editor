@@ -41,6 +41,7 @@ interface ProjectState {
   project: Project | null
   projectDir: string | null
   isImporting: boolean
+  importingCount: number
   isSyncing: boolean
   syncProgress: SyncProgressEvent | null
   isTranscribing: boolean
@@ -86,7 +87,7 @@ export const useProjectStore = create<ProjectState>()(
         const { project, projectDir } = get()
         if (!project || !projectDir || filePaths.length === 0) return
 
-        set({ isImporting: true, importError: null })
+        set({ isImporting: true, importError: null, importingCount: filePaths.length })
         try {
           const newClips: SourceClip[] = await window.api.ingest.import({ filePaths, projectDir })
           set((state) => {
@@ -102,7 +103,7 @@ export const useProjectStore = create<ProjectState>()(
         } catch (err) {
           set({ importError: String(err) })
         } finally {
-          set({ isImporting: false })
+          set({ isImporting: false, importingCount: 0 })
         }
       }
 
@@ -110,6 +111,7 @@ export const useProjectStore = create<ProjectState>()(
         project: null,
         projectDir: null,
         isImporting: false,
+        importingCount: 0,
         isSyncing: false,
         syncProgress: null,
         isTranscribing: false,
