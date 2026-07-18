@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid'
-import type { TrackInterval, KeptRange } from '@shared/types/project'
+import type { TrackInterval, KeptRange, SourceClip } from '@shared/types/project'
+import { sourceCoverageRange } from '@shared/types/timeline-time'
 
 export {
   resolveIntervalAt,
   mapUnifiedTimeToLocal,
   mapLocalTimeToUnified,
   resolveVideoSourceId,
-  resolveAudioSourceId
+  resolveAudioSourceId,
+  sourceCoverageRange
 } from '@shared/types/timeline-time'
 
 /**
@@ -57,17 +59,26 @@ export function insertActiveSwitch(
   return result
 }
 
-const MIN_INTERVAL_DURATION_SEC = 0.05
-
 /**
- * Drags the shared boundary between `leftIntervalId` and its right neighbor to `atSec`,
- * clamped so neither interval collapses below MIN_INTERVAL_DURATION_SEC. No-op if the
- * interval has no right neighbor (i.e. it's the last one, whose end is pinned to the timeline).
+ * Drags the shared boundary between `leftIntervalId` and its right neighbor to `atSec`. The drag
+ * is bounded by the track's own extent ([0, timelineDurationSec]) — not by the two intervals' own
+ * start/end — but never past the point where the *growing* side's own source actually has
+ * footage: dragging right can't extend the left interval's source beyond that source's own
+ * coverage end, dragging left can't extend the right interval's source before its own coverage
+ * start. A source with no sync segments yet (not synced) has no such bound.
+ * Dragging past a neighbor's far edge sweeps over however many further intervals lie between the
+ * old and new boundary: fully swallowed ones are removed, and whichever interval straddles the
+ * new boundary is truncated to meet it. Either side of the dragged boundary disappears entirely
+ * if the drag collapses it to zero length (rather than being clamped to a minimum), same as
+ * `insertActiveSwitch`. No-op if the interval has no right neighbor (i.e. it's the last one,
+ * whose end is pinned to the timeline) or if `atSec` doesn't actually move it.
  */
 export function moveIntervalBoundary(
   intervals: TrackInterval[],
   leftIntervalId: string,
-  atSec: number
+  atSec: number,
+  timelineDurationSec: number,
+  sources: SourceClip[]
 ): TrackInterval[] {
   const sorted = [...intervals].sort((a, b) => a.startSec - b.startSec)
   const index = sorted.findIndex((iv) => iv.id === leftIntervalId)
@@ -75,16 +86,53 @@ export function moveIntervalBoundary(
 
   const left = sorted[index]
   const right = sorted[index + 1]
-  const clamped = Math.min(
-    Math.max(atSec, left.startSec + MIN_INTERVAL_DURATION_SEC),
-    right.endSec - MIN_INTERVAL_DURATION_SEC
-  )
+  const oldBoundary = left.endSec
 
-  return intervals.map((iv) => {
-    if (iv.id === left.id) return { ...iv, endSec: clamped }
-    if (iv.id === right.id) return { ...iv, startSec: clamped }
-    return iv
-  })
+  const leftSource = sources.find((s) => s.id === left.value)
+  const rightSource = sources.find((s) => s.id === right.value)
+  const leftCoverage = leftSource && sourceCoverageRange(leftSource)
+  const rightCoverage = rightSource && sourceCoverageRange(rightSource)
+  const minSec = Math.max(0, rightCoverage?.startSec ?? 0)
+  const maxSec = Math.min(timelineDurationSec, leftCoverage?.endSec ?? timelineDurationSec)
+
+  const clamped = Math.min(Math.max(atSec, minSec), maxSec)
+  if (clamped === oldBoundary) return intervals
+
+  const result: TrackInterval[] = []
+  if (clamped > oldBoundary) {
+    // dragging right: the left interval grows forward, swallowing/truncating whatever follows
+    for (let i = 0; i < sorted.length; i++) {
+      const iv = sorted[i]
+      if (i === index) {
+        result.push({ ...iv, endSec: clamped })
+      } else if (i < index) {
+        result.push(iv)
+      } else if (iv.endSec <= clamped) {
+        continue // fully swallowed
+      } else if (iv.startSec < clamped) {
+        result.push({ ...iv, startSec: clamped }) // straddles the new boundary
+      } else {
+        result.push(iv)
+      }
+    }
+  } else {
+    // dragging left: the right interval grows backward, swallowing/truncating whatever precedes
+    for (let i = 0; i < sorted.length; i++) {
+      const iv = sorted[i]
+      if (i === index + 1) {
+        result.push({ ...iv, startSec: clamped })
+      } else if (i > index + 1) {
+        result.push(iv)
+      } else if (iv.startSec >= clamped) {
+        continue // fully swallowed
+      } else if (iv.endSec > clamped) {
+        result.push({ ...iv, endSec: clamped }) // straddles the new boundary
+      } else {
+        result.push(iv)
+      }
+    }
+  }
+  return result
 }
 
 /** Splits whichever kept range contains `atSec` into two adjacent kept ranges at that point. */

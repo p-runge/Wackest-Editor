@@ -11,7 +11,7 @@ interface CameraSwitcherProps {
   videoSources: SourceClip[]
   audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
-  setPrimaryAudioAt: (atSec: number, sourceId: string) => Promise<void>
+  setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
 }
 
 function isTypingTarget(el: Element | null): boolean {
@@ -115,7 +115,7 @@ function CameraSwitcher({
   videoSources,
   audioRows,
   setActiveVideoAt,
-  setPrimaryAudioAt
+  setActiveAudioAt
 }: CameraSwitcherProps): React.JSX.Element | null {
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
   const [audioFollowsVideo, setAudioFollowsVideo] = useState(false)
@@ -133,31 +133,31 @@ function CameraSwitcher({
       if (!source || mapUnifiedTimeToLocal(source, playheadSec) === null) return
       void setActiveVideoAt(playheadSec, source.id)
       if (audioFollowsVideo && source.probed.hasAudio) {
-        void setPrimaryAudioAt(playheadSec, source.id)
+        void setActiveAudioAt(playheadSec, source.id)
       }
     },
-    [playheadSec, audioFollowsVideo, videoSources, setActiveVideoAt, setPrimaryAudioAt]
+    [playheadSec, audioFollowsVideo, videoSources, setActiveVideoAt, setActiveAudioAt]
   )
 
   const handleAudioSelect = useCallback(
     (sourceId: string): void => {
       const source = audioRows.find((row) => row.source.id === sourceId)?.source
       if (!source || mapUnifiedTimeToLocal(source, playheadSec) === null) return
-      void setPrimaryAudioAt(playheadSec, sourceId)
+      void setActiveAudioAt(playheadSec, sourceId)
     },
-    [playheadSec, audioRows, setPrimaryAudioAt]
+    [playheadSec, audioRows, setActiveAudioAt]
   )
 
   // Flipping the toggle only changes what *future* camera switches do, which gives no
   // feedback that anything happened. Also sync audio to whichever camera is active right now,
-  // so turning it on has an immediate, visible effect on the "Primäres Audio" track.
+  // so turning it on has an immediate, visible effect on the "Aktives Audio" track.
   const handleToggleAudioFollowsVideo = (): void => {
     setAudioFollowsVideo((current) => {
       const next = !current
       if (next) {
         const activeVideo = videoSources.find((s) => s.id === activeVideoId)
         if (activeVideo?.probed.hasAudio && activeAudioId !== activeVideoId) {
-          void setPrimaryAudioAt(playheadSec, activeVideo.id)
+          void setActiveAudioAt(playheadSec, activeVideo.id)
         }
       }
       return next
@@ -214,7 +214,7 @@ function CameraSwitcher({
       />
 
       <label className="flex cursor-pointer items-center justify-between gap-2 border-t border-border/40 pt-2 text-xs text-muted-foreground">
-        <span title="Wenn an: ein Kamera-Wechsel schaltet auch das primäre Audio auf diese Quelle um (wirkt sofort auch auf die gerade aktive Kamera).">
+        <span title="Wenn an: ein Kamera-Wechsel schaltet auch das aktive Audio auf diese Quelle um (wirkt sofort auch auf die gerade aktive Kamera).">
           Ton folgt Bild
         </span>
         <button

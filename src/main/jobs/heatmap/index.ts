@@ -4,7 +4,7 @@ import { join } from 'path'
 import type { Project, HeatmapPoint } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
 import { createHeatmapProvider } from '../../services/providers/heatmap'
-import { pickPrimaryAudioSource } from '../stt'
+import { pickActiveAudioSource } from '../stt'
 
 export interface HeatmapProgressUpdate {
   progress: number
@@ -68,9 +68,7 @@ export async function runHeatmapForProject(
 
   // the local heuristic needs actual audio; LLM providers only need the transcript text
   const audioFilePath =
-    provider.id === 'heuristic-local'
-      ? pickPrimaryAudioSource(project)?.originalFilePath
-      : undefined
+    provider.id === 'heuristic-local' ? pickActiveAudioSource(project)?.originalFilePath : undefined
 
   const points = await provider.score({
     transcript: project.transcript,

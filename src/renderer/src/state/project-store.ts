@@ -72,9 +72,9 @@ interface ProjectState {
   runHeatmap: () => Promise<void>
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
-  setPrimaryAudioAt: (atSec: number, sourceId: string) => Promise<void>
+  setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
   moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
-  movePrimaryAudioBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
+  moveActiveAudioBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
   splitCutAt: (atSec: number) => Promise<void>
   deleteKeptRange: (rangeId: string) => Promise<void>
   runExport: () => Promise<void>
@@ -371,7 +371,7 @@ export const useProjectStore = create<ProjectState>()(
           if (changed) await get().saveProject()
         },
 
-        setPrimaryAudioAt: async (atSec, sourceId) => {
+        setActiveAudioAt: async (atSec, sourceId) => {
           let changed = false
           set((state) => {
             if (!state.project) return state
@@ -381,21 +381,21 @@ export const useProjectStore = create<ProjectState>()(
               atSec
             )
             const currentActiveAudioId = resolveAudioSourceId(
-              state.project.edit.primaryAudioIntervals,
+              state.project.edit.activeAudioIntervals,
               state.project.sources,
               atSec,
               activeVideoId
             )
             if (currentActiveAudioId === sourceId) return state
             changed = true
-            const primaryAudioIntervals = insertActiveSwitch(
-              state.project.edit.primaryAudioIntervals,
+            const activeAudioIntervals = insertActiveSwitch(
+              state.project.edit.activeAudioIntervals,
               atSec,
               sourceId,
               state.project.timelineDurationSec
             )
             return {
-              project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }
+              project: { ...state.project, edit: { ...state.project.edit, activeAudioIntervals } }
             }
           })
           if (changed) await get().saveProject()
@@ -407,7 +407,9 @@ export const useProjectStore = create<ProjectState>()(
             const activeVideoIntervals = moveIntervalBoundary(
               state.project.edit.activeVideoIntervals,
               leftIntervalId,
-              atSec
+              atSec,
+              state.project.timelineDurationSec,
+              state.project.sources
             )
             return {
               project: { ...state.project, edit: { ...state.project.edit, activeVideoIntervals } }
@@ -416,16 +418,18 @@ export const useProjectStore = create<ProjectState>()(
           await get().saveProject()
         },
 
-        movePrimaryAudioBoundary: async (leftIntervalId, atSec) => {
+        moveActiveAudioBoundary: async (leftIntervalId, atSec) => {
           set((state) => {
             if (!state.project) return state
-            const primaryAudioIntervals = moveIntervalBoundary(
-              state.project.edit.primaryAudioIntervals,
+            const activeAudioIntervals = moveIntervalBoundary(
+              state.project.edit.activeAudioIntervals,
               leftIntervalId,
-              atSec
+              atSec,
+              state.project.timelineDurationSec,
+              state.project.sources
             )
             return {
-              project: { ...state.project, edit: { ...state.project.edit, primaryAudioIntervals } }
+              project: { ...state.project, edit: { ...state.project.edit, activeAudioIntervals } }
             }
           })
           await get().saveProject()

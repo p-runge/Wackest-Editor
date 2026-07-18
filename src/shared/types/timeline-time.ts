@@ -15,6 +15,26 @@ export function resolveIntervalAt(
 }
 
 /**
+ * The unified-timeline span a source actually has footage for — from the earliest to the latest
+ * of its sync segments. `null` for a source that hasn't been synced yet (no segments), which
+ * callers should treat as "no bound" rather than "zero-length".
+ */
+export function sourceCoverageRange(
+  source: SourceClip
+): { startSec: number; endSec: number } | null {
+  if (source.syncSegments.length === 0) return null
+  let startSec = Infinity
+  let endSec = -Infinity
+  for (const seg of source.syncSegments) {
+    const segStart = seg.localStartSec + seg.offsetSec
+    const segEnd = seg.localEndSec + seg.offsetSec
+    if (segStart < startSec) startSec = segStart
+    if (segEnd > endSec) endSec = segEnd
+  }
+  return { startSec, endSec }
+}
+
+/**
  * Inverse of the STT/sync forward mapping (`localTime + segment.offsetSec = unifiedTime`):
  * finds the source-local playback time for a given point on the unified timeline, by finding
  * whichever sync segment's local range the corresponding local time would fall into.
@@ -65,17 +85,17 @@ export function resolveVideoSourceId(
 }
 
 /**
- * Same idea for primary audio: an explicit interval wins while its source actually covers this
+ * Same idea for active audio: an explicit interval wins while its source actually covers this
  * time; otherwise prefer the resolved video source's own audio if it actually covers this time,
  * else fall back to any audio-bearing source that does.
  */
 export function resolveAudioSourceId(
-  primaryAudioIntervals: TrackInterval[],
+  activeAudioIntervals: TrackInterval[],
   sources: SourceClip[],
   atSec: number,
   fallbackVideoSourceId: string | undefined
 ): string | undefined {
-  const explicit = resolveIntervalAt(primaryAudioIntervals, atSec)?.value
+  const explicit = resolveIntervalAt(activeAudioIntervals, atSec)?.value
   if (explicit) {
     const explicitSource = sources.find((s) => s.id === explicit)
     if (explicitSource && mapUnifiedTimeToLocal(explicitSource, atSec) !== null) return explicit
@@ -91,22 +111,22 @@ export function resolveAudioSourceId(
 
 /**
  * Partitions the whole unified timeline into non-overlapping segments, each attributed to
- * whichever source is the resolved primary audio there (explicit `primaryAudioIntervals` win,
+ * whichever source is the resolved active audio there (explicit `activeAudioIntervals` win,
  * otherwise the same fallback `resolveAudioSourceId` uses for playback/export). Used to decide
  * exactly which audio to transcribe: only the portion of each source that is actually the
- * audible/primary track at that point in time, so overlapping recordings (e.g. two mics running
+ * audible/active track at that point in time, so overlapping recordings (e.g. two mics running
  * simultaneously) don't produce duplicate transcript text for the same moment.
  */
-export function resolvePrimaryAudioCoverage(
+export function resolveActiveAudioCoverage(
   sources: SourceClip[],
   activeVideoIntervals: TrackInterval[],
-  primaryAudioIntervals: TrackInterval[],
+  activeAudioIntervals: TrackInterval[],
   timelineDurationSec: number
 ): AudioCoverageSegment[] {
   if (timelineDurationSec <= 0) return []
 
   const boundaries = new Set<number>([0, timelineDurationSec])
-  for (const iv of [...activeVideoIntervals, ...primaryAudioIntervals]) {
+  for (const iv of [...activeVideoIntervals, ...activeAudioIntervals]) {
     if (iv.startSec > 0 && iv.startSec < timelineDurationSec) boundaries.add(iv.startSec)
     if (iv.endSec > 0 && iv.endSec < timelineDurationSec) boundaries.add(iv.endSec)
   }
@@ -129,7 +149,7 @@ export function resolvePrimaryAudioCoverage(
 
     const midpoint = (unifiedStartSec + unifiedEndSec) / 2
     const videoSourceId = resolveVideoSourceId(activeVideoIntervals, sources, midpoint)
-    const sourceId = resolveAudioSourceId(primaryAudioIntervals, sources, midpoint, videoSourceId)
+    const sourceId = resolveAudioSourceId(activeAudioIntervals, sources, midpoint, videoSourceId)
     if (!sourceId) continue
 
     const previous = segments[segments.length - 1]

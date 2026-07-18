@@ -89,7 +89,7 @@ export const HeatmapPointSchema = z.object({
 })
 export type HeatmapPoint = z.infer<typeof HeatmapPointSchema>
 
-// a time range where `value` (a SourceClip.id) is the active video / primary audio source
+// a time range where `value` (a SourceClip.id) is the active video / active audio source
 export const TrackIntervalSchema = z.object({
   id: z.string(),
   startSec: z.number(),
@@ -109,7 +109,7 @@ export type KeptRange = z.infer<typeof KeptRangeSchema>
 
 export const EditStateSchema = z.object({
   activeVideoIntervals: z.array(TrackIntervalSchema),
-  primaryAudioIntervals: z.array(TrackIntervalSchema),
+  activeAudioIntervals: z.array(TrackIntervalSchema),
   keptRanges: z.array(KeptRangeSchema)
 })
 export type EditState = z.infer<typeof EditStateSchema>
@@ -160,7 +160,7 @@ export function createEmptyProject(name: string, id: string): Project {
     timelineDurationSec: 0,
     transcript: [],
     heatmap: [],
-    edit: { activeVideoIntervals: [], primaryAudioIntervals: [], keptRanges: [] },
+    edit: { activeVideoIntervals: [], activeAudioIntervals: [], keptRanges: [] },
     providerConfig: {
       stt: { provider: 'openai-whisper-api', languageHint: 'auto' },
       heatmap: { provider: 'heuristic-local' }

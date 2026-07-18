@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { Project, SourceClip, TranscriptSegment } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
-import { resolvePrimaryAudioCoverage, mapLocalTimeToUnified } from '@shared/types/timeline-time'
+import { resolveActiveAudioCoverage, mapLocalTimeToUnified } from '@shared/types/timeline-time'
 import { createSttProvider } from '../../services/providers/stt'
 
 export interface SttProgressUpdate {
@@ -21,7 +21,7 @@ function averageConfidence(source: SourceClip): number {
  * user-flagged "main" source, else whichever audio-bearing source has the highest average sync
  * confidence.
  */
-export function pickPrimaryAudioSource(project: Project): SourceClip | undefined {
+export function pickActiveAudioSource(project: Project): SourceClip | undefined {
   const mainSource = project.sources.find((s) => s.role === 'main' && s.probed.hasAudio)
   if (mainSource) return mainSource
 
@@ -37,10 +37,10 @@ export async function runSttForProject(
   settings: AppSettings,
   onProgress?: (update: SttProgressUpdate) => void
 ): Promise<TranscriptSegment[]> {
-  const coverage = resolvePrimaryAudioCoverage(
+  const coverage = resolveActiveAudioCoverage(
     project.sources,
     project.edit.activeVideoIntervals,
-    project.edit.primaryAudioIntervals,
+    project.edit.activeAudioIntervals,
     project.timelineDurationSec
   )
   if (coverage.length === 0) {

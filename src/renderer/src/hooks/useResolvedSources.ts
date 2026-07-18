@@ -19,7 +19,7 @@ export function useResolvedSources(
       playheadSec
     )
     const activeAudioId = resolveAudioSourceId(
-      project.edit.primaryAudioIntervals,
+      project.edit.activeAudioIntervals,
       project.sources,
       playheadSec,
       activeVideoId

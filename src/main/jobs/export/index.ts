@@ -33,7 +33,7 @@ export async function runExportForProject(
   const segments = buildExportSegments(
     project.edit.keptRanges,
     project.edit.activeVideoIntervals,
-    project.edit.primaryAudioIntervals,
+    project.edit.activeAudioIntervals,
     project.sources
   )
 

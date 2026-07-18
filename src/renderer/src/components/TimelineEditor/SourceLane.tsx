@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link2 } from 'lucide-react'
 import type { SourceClip, TrackInterval } from '@shared/types/project'
 import { toMediaUrl } from '@shared/types/media-url'
+import { sourceCoverageRange } from '../../lib/timeline-edit'
 import WaveformCanvas from './WaveformCanvas'
 
 interface SourceLaneProps {
@@ -9,13 +10,19 @@ interface SourceLaneProps {
   pixelsPerSecond: number
   trackWidthPx: number
   color: string
-  /** Whether this source is the currently-resolved active video / primary audio at the playhead. */
+  /** Whether this source is the currently-resolved active video / active audio at the playhead. */
   isActive: boolean
   /** Whether this source has footage at the current playhead — disables the active-toggle if not. */
   hasCoverage: boolean
-  /** Full activeVideoIntervals / primaryAudioIntervals array, so this lane can show exactly the
+  /** Full activeVideoIntervals / activeAudioIntervals array, so this lane can show exactly the
    *  sub-ranges where it is the active source, and find its shared boundaries with neighbors. */
   activeIntervals: TrackInterval[]
+  /** All sources in this section (video or audio), so a dragged boundary's bounds can be looked
+   *  up for whichever neighbor source actually owns each side of it. */
+  sources: SourceClip[]
+  /** Overall length of the active-video / active-audio track — the outer bound a dragged
+   *  boundary can be pushed to, past however many neighboring segments it crosses. */
+  timelineDurationSec: number
   /** Sets this source active starting at the current playhead. */
   onSetActiveHere: () => void
   /** Sets this source active starting at the clicked timestamp within the waveform. */
@@ -35,7 +42,6 @@ interface BoundaryDragState {
 
 const LANE_HEIGHT = 44
 const WAVEFORM_BUCKETS_PER_SEC = 10 // must match main/services/ffmpeg.ts
-const MIN_GAP_SEC = 0.05
 
 /** Subtracts a set of (sorted, non-overlapping) ranges from a single [start, end) range. */
 function subtractRanges(
@@ -62,6 +68,8 @@ function SourceLane({
   isActive,
   hasCoverage,
   activeIntervals,
+  sources,
+  timelineDurationSec,
   onSetActiveHere,
   onWaveformClick,
   onMoveBoundary,
@@ -96,10 +104,14 @@ function SourceLane({
   ): void => {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
+    const leftSource = sources.find((s) => s.id === left.value)
+    const rightSource = sources.find((s) => s.id === right.value)
+    const leftCoverage = leftSource && sourceCoverageRange(leftSource)
+    const rightCoverage = rightSource && sourceCoverageRange(rightSource)
     setDrag({
       leftIntervalId: left.id,
-      minSec: left.startSec + MIN_GAP_SEC,
-      maxSec: right.endSec - MIN_GAP_SEC,
+      minSec: Math.max(0, rightCoverage?.startSec ?? 0),
+      maxSec: Math.min(timelineDurationSec, leftCoverage?.endSec ?? timelineDurationSec),
       atSec: left.endSec
     })
   }

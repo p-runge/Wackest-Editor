@@ -49,9 +49,9 @@ function SectionHeader({
 function TimelineEditor(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const setActiveVideoAt = useProjectStore((state) => state.setActiveVideoAt)
-  const setPrimaryAudioAt = useProjectStore((state) => state.setPrimaryAudioAt)
+  const setActiveAudioAt = useProjectStore((state) => state.setActiveAudioAt)
   const moveActiveVideoBoundary = useProjectStore((state) => state.moveActiveVideoBoundary)
-  const movePrimaryAudioBoundary = useProjectStore((state) => state.movePrimaryAudioBoundary)
+  const moveActiveAudioBoundary = useProjectStore((state) => state.moveActiveAudioBoundary)
   const splitCutAt = useProjectStore((state) => state.splitCutAt)
   const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
   const importFiles = useProjectStore((state) => state.importFiles)
@@ -133,7 +133,7 @@ function TimelineEditor(): React.JSX.Element | null {
             videoSources={videoSources}
             audioRows={audioRows}
             setActiveVideoAt={setActiveVideoAt}
-            setPrimaryAudioAt={setPrimaryAudioAt}
+            setActiveAudioAt={setActiveAudioAt}
           />
         </div>
 
@@ -216,6 +216,8 @@ function TimelineEditor(): React.JSX.Element | null {
               isActive={source.id === activeVideoId}
               hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
               activeIntervals={project.edit.activeVideoIntervals}
+              sources={project.sources}
+              timelineDurationSec={project.timelineDurationSec}
               onSetActiveHere={() => void setActiveVideoAt(playheadSec, source.id)}
               onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
               onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
@@ -225,7 +227,7 @@ function TimelineEditor(): React.JSX.Element | null {
           <SectionHeader
             icon={<Mic className="size-3" />}
             title="Audio-Quellen"
-            hint="Klick setzt das primäre Audio"
+            hint="Klick setzt das aktive Audio"
           />
           {audioRows.map(({ source, linkedVideoLabel }) => (
             <SourceLane
@@ -237,10 +239,12 @@ function TimelineEditor(): React.JSX.Element | null {
               linkedVideoLabel={linkedVideoLabel}
               isActive={source.id === activeAudioId}
               hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
-              activeIntervals={project.edit.primaryAudioIntervals}
-              onSetActiveHere={() => void setPrimaryAudioAt(playheadSec, source.id)}
-              onWaveformClick={(atSec) => void setPrimaryAudioAt(atSec, source.id)}
-              onMoveBoundary={(leftId, atSec) => void movePrimaryAudioBoundary(leftId, atSec)}
+              activeIntervals={project.edit.activeAudioIntervals}
+              sources={project.sources}
+              timelineDurationSec={project.timelineDurationSec}
+              onSetActiveHere={() => void setActiveAudioAt(playheadSec, source.id)}
+              onWaveformClick={(atSec) => void setActiveAudioAt(atSec, source.id)}
+              onMoveBoundary={(leftId, atSec) => void moveActiveAudioBoundary(leftId, atSec)}
             />
           ))}
 

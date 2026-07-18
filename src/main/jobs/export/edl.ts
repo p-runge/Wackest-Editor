@@ -9,7 +9,7 @@ export interface ExportSegment {
 }
 
 /**
- * Splits each kept range at every active-video/primary-audio boundary it contains, so every
+ * Splits each kept range at every active-video/active-audio boundary it contains, so every
  * resulting sub-segment has exactly one active video source and one active audio source —
  * matching what the preview player would show, including its same fallback source choice
  * (which always picks a source that actually has footage at that point in time).
@@ -17,7 +17,7 @@ export interface ExportSegment {
 export function buildExportSegments(
   keptRanges: KeptRange[],
   activeVideoIntervals: TrackInterval[],
-  primaryAudioIntervals: TrackInterval[],
+  activeAudioIntervals: TrackInterval[],
   sources: SourceClip[]
 ): ExportSegment[] {
   const segments: ExportSegment[] = []
@@ -25,7 +25,7 @@ export function buildExportSegments(
 
   for (const range of sortedRanges) {
     const boundaries = new Set<number>()
-    for (const iv of [...activeVideoIntervals, ...primaryAudioIntervals]) {
+    for (const iv of [...activeVideoIntervals, ...activeAudioIntervals]) {
       if (iv.startSec > range.startSec && iv.startSec < range.endSec) {
         boundaries.add(iv.startSec)
       }
@@ -39,7 +39,7 @@ export function buildExportSegments(
 
       const videoSourceId = resolveVideoSourceId(activeVideoIntervals, sources, segStart)
       const audioSourceId = resolveAudioSourceId(
-        primaryAudioIntervals,
+        activeAudioIntervals,
         sources,
         segStart,
         videoSourceId

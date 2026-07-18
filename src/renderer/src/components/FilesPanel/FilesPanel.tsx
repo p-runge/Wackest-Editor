@@ -10,7 +10,7 @@ import type { Project, SourceClip } from '@shared/types/project'
 function isSourceInUse(project: Project, sourceId: string): boolean {
   return (
     project.edit.activeVideoIntervals.some((iv) => iv.value === sourceId) ||
-    project.edit.primaryAudioIntervals.some((iv) => iv.value === sourceId)
+    project.edit.activeAudioIntervals.some((iv) => iv.value === sourceId)
   )
 }
 
@@ -134,7 +134,7 @@ function FilesPanel(): React.JSX.Element | null {
             <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <span>
-                Diese Quelle wird aktuell als aktives Video oder primäres Audio in der Timeline
+                Diese Quelle wird aktuell als aktives Video oder aktives Audio in der Timeline
                 verwendet. Entfernen kann Lücken im Schnitt verursachen.
               </span>
             </div>
