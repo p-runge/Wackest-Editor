@@ -3,16 +3,23 @@ import { Film, Mic, Pause, Play, Redo2, Scissors, Undo2, Upload, ZoomIn } from '
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
-import SourceLane from './SourceLane'
-import SubtitleLane from './SubtitleLane'
-import HeatmapLane from './HeatmapLane'
-import CutLane from './CutLane'
+import SourceLaneLabel from './SourceLaneLabel'
+import SourceLaneTrack from './SourceLaneTrack'
+import LaneLabel from './LaneLabel'
+import SubtitleLaneTrack from './SubtitleLaneTrack'
+import HeatmapLaneTrack from './HeatmapLaneTrack'
+import CutLaneTrack from './CutLaneTrack'
 import PreviewPlayer from './PreviewPlayer'
 import CameraSwitcher from './CameraSwitcher'
 import { colorForSourceId } from '../../lib/colors'
 import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
-import { LANE_LABEL_WIDTH_PX } from './constants'
+import {
+  BOTTOM_SPACER_PX,
+  RULER_HEIGHT_PX,
+  SECTION_HEADER_HEIGHT_PX,
+  SIMPLE_LANE_HEIGHT_PX
+} from './constants'
 import { Button } from '../ui/button'
 import type { SourceClip } from '@shared/types/project'
 import './timeline-editor.css'
@@ -26,23 +33,34 @@ function formatTime(sec: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
-function SectionHeader({
+/** Sticky section title in the sidebar — stays pinned below the ruler spacer for as long as its
+ *  section's rows (wrapped alongside it in the same parent) are still in view. */
+function SidebarSectionLabel({
   icon,
-  title,
-  hint
+  title
 }: {
   icon: React.ReactNode
   title: string
-  hint: string
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-1.5 border-b border-border/60 bg-background/60 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div
+      className="timeline-sidebar__section-label flex items-center gap-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+      style={{ height: SECTION_HEADER_HEIGHT_PX }}
+    >
       {icon}
       {title}
-      <span className="ml-auto truncate text-right normal-case font-normal text-muted-foreground/70">
-        {hint}
-      </span>
     </div>
+  )
+}
+
+/** Body-side counterpart of SidebarSectionLabel — same height and sticky offset, so the two stay
+ *  vertically in sync, but purely a visual divider since the title itself lives in the sidebar. */
+function BodySectionDivider({ trackWidthPx }: { trackWidthPx: number }): React.JSX.Element {
+  return (
+    <div
+      className="timeline-section__divider"
+      style={{ height: SECTION_HEADER_HEIGHT_PX, width: trackWidthPx }}
+    />
   )
 }
 
@@ -68,18 +86,51 @@ function TimelineEditor(): React.JSX.Element | null {
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
 
   const [isRazorMode, setIsRazorMode] = useState(false)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const [scrollContainerWidth, setScrollContainerWidth] = useState(0)
+  const sidebarScrollRef = useRef<HTMLDivElement>(null)
+  const bodyScrollRef = useRef<HTMLDivElement>(null)
+  const isSyncingScrollRef = useRef(false)
+  const [bodyWidth, setBodyWidth] = useState(0)
+  const [scrollLeft, setScrollLeft] = useState(0)
+  const hscrollDragRef = useRef<{ startClientX: number; startScrollLeft: number } | null>(null)
 
   useEffect(() => {
-    const el = scrollContainerRef.current
+    const el = bodyScrollRef.current
     if (!el) return undefined
     const observer = new ResizeObserver((entries) => {
-      setScrollContainerWidth(entries[0].contentRect.width)
+      setBodyWidth(entries[0].contentRect.width)
     })
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // The sidebar and the body are separate scroll containers (so the sidebar can stay put
+  // horizontally without any position: sticky tricks) — keep their vertical scroll in lockstep.
+  // The guard flag stops the programmatic scrollTop set below from re-triggering its own handler.
+  const handleBodyScroll = (): void => {
+    const body = bodyScrollRef.current
+    if (body) setScrollLeft(body.scrollLeft)
+
+    if (isSyncingScrollRef.current) {
+      isSyncingScrollRef.current = false
+      return
+    }
+    const sidebar = sidebarScrollRef.current
+    if (!sidebar || !body) return
+    isSyncingScrollRef.current = true
+    sidebar.scrollTop = body.scrollTop
+  }
+
+  const handleSidebarScroll = (): void => {
+    if (isSyncingScrollRef.current) {
+      isSyncingScrollRef.current = false
+      return
+    }
+    const sidebar = sidebarScrollRef.current
+    const body = bodyScrollRef.current
+    if (!sidebar || !body) return
+    isSyncingScrollRef.current = true
+    body.scrollTop = sidebar.scrollTop
+  }
 
   if (!project) return null
 
@@ -105,9 +156,54 @@ function TimelineEditor(): React.JSX.Element | null {
   }
 
   const sourceIds = project.sources.map((s) => s.id)
-  const minTrackWidthPx = Math.max(0, scrollContainerWidth - LANE_LABEL_WIDTH_PX)
-  const trackWidthPx = Math.max(project.timelineDurationSec * pixelsPerSecond, minTrackWidthPx)
-  const contentWidth = LANE_LABEL_WIDTH_PX + trackWidthPx
+  const trackWidthPx = Math.max(project.timelineDurationSec * pixelsPerSecond, bodyWidth)
+  const playheadLeftPx = playheadSec * pixelsPerSecond
+
+  // Custom horizontal scrollbar geometry — replaces the native one (hidden via CSS, see
+  // .timeline-body::-webkit-scrollbar:horizontal) so it can be visible without reserving any
+  // row-content height. Mirrors standard scrollbar math: thumb size proportional to the visible
+  // fraction of content, with a floor so it stays grabbable even when heavily zoomed out.
+  const maxScrollLeft = Math.max(0, trackWidthPx - bodyWidth)
+  const showHorizontalScrollbar = maxScrollLeft > 0
+  const thumbWidthPx =
+    bodyWidth > 0 ? Math.min(bodyWidth, Math.max(24, (bodyWidth / trackWidthPx) * bodyWidth)) : 0
+  const thumbTravelPx = Math.max(0, bodyWidth - thumbWidthPx)
+  const thumbLeftPx = maxScrollLeft > 0 ? (scrollLeft / maxScrollLeft) * thumbTravelPx : 0
+
+  const handleHscrollThumbPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    hscrollDragRef.current = { startClientX: e.clientX, startScrollLeft: scrollLeft }
+  }
+
+  const handleHscrollThumbPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const drag = hscrollDragRef.current
+    const body = bodyScrollRef.current
+    if (!drag || !body || thumbTravelPx <= 0) return
+    const deltaClientX = e.clientX - drag.startClientX
+    const scale = maxScrollLeft / thumbTravelPx
+    body.scrollLeft = Math.min(
+      Math.max(drag.startScrollLeft + deltaClientX * scale, 0),
+      maxScrollLeft
+    )
+  }
+
+  const handleHscrollThumbPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (hscrollDragRef.current) e.currentTarget.releasePointerCapture(e.pointerId)
+    hscrollDragRef.current = null
+  }
+
+  const handleHscrollTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.target !== e.currentTarget) return // clicks on the thumb are handled separately
+    const body = bodyScrollRef.current
+    if (!body || maxScrollLeft <= 0) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const clickFraction = (e.clientX - rect.left) / rect.width
+    body.scrollLeft = Math.min(
+      Math.max(clickFraction * trackWidthPx - bodyWidth / 2, 0),
+      maxScrollLeft
+    )
+  }
 
   const videoSources = project.sources.filter((s) => s.kind === 'video')
   const audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }> = project.sources
@@ -172,18 +268,6 @@ function TimelineEditor(): React.JSX.Element | null {
             <span className="font-mono text-sm tabular-nums text-muted-foreground">
               {formatTime(playheadSec)}
             </span>
-
-            <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-              <ZoomIn className="size-3.5" />
-              <input
-                type="range"
-                min={2}
-                max={100}
-                value={pixelsPerSecond}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="accent-primary"
-              />
-            </label>
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -194,90 +278,148 @@ function TimelineEditor(): React.JSX.Element | null {
         </div>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="mx-4 mb-4 mt-2 min-h-0 flex-1 overflow-auto rounded-md border border-border/60 bg-white/[0.02]"
-      >
-        <div className="relative py-1" style={{ width: contentWidth }}>
-          <TimeRuler pixelsPerSecond={pixelsPerSecond} trackWidthPx={trackWidthPx} onSeek={seek} />
+      <label className="mx-4 mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+        <ZoomIn className="size-3.5" />
+        <input
+          type="range"
+          min={2}
+          max={100}
+          value={pixelsPerSecond}
+          onChange={(e) => setZoom(Number(e.target.value))}
+          className="accent-primary"
+        />
+      </label>
 
-          <SectionHeader
-            icon={<Film className="size-3" />}
-            title="Video-Quellen"
-            hint="Klick setzt die aktive Kamera"
-          />
-          {videoSources.map((source) => (
-            <SourceLane
-              key={source.id}
-              source={source}
-              pixelsPerSecond={pixelsPerSecond}
-              trackWidthPx={trackWidthPx}
-              color={colorForSourceId(source.id, sourceIds)}
-              isActive={source.id === activeVideoId}
-              hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
-              activeIntervals={project.edit.activeVideoIntervals}
-              sources={project.sources}
-              timelineDurationSec={project.timelineDurationSec}
-              onSetActiveHere={() => void setActiveVideoAt(playheadSec, source.id)}
-              onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
-              onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
-            />
-          ))}
+      <div className="mx-4 mb-4 mt-1 flex min-h-0 flex-1 overflow-hidden rounded-md border border-border/60 bg-white/[0.02]">
+        <div ref={sidebarScrollRef} className="timeline-sidebar" onScroll={handleSidebarScroll}>
+          <div className="timeline-sidebar__spacer" style={{ height: RULER_HEIGHT_PX }} />
 
-          <SectionHeader
-            icon={<Mic className="size-3" />}
-            title="Audio-Quellen"
-            hint="Klick setzt das aktive Audio"
-          />
-          {audioRows.map(({ source, linkedVideoLabel }) => (
-            <SourceLane
-              key={source.id}
-              source={source}
-              pixelsPerSecond={pixelsPerSecond}
-              trackWidthPx={trackWidthPx}
-              color={colorForSourceId(source.id, sourceIds)}
-              linkedVideoLabel={linkedVideoLabel}
-              isActive={source.id === activeAudioId}
-              hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
-              activeIntervals={project.edit.activeAudioIntervals}
-              sources={project.sources}
-              timelineDurationSec={project.timelineDurationSec}
-              onSetActiveHere={() => void setActiveAudioAt(playheadSec, source.id)}
-              onWaveformClick={(atSec) => void setActiveAudioAt(atSec, source.id)}
-              onMoveBoundary={(leftId, atSec) => void moveActiveAudioBoundary(leftId, atSec)}
-            />
-          ))}
+          <div className="timeline-sidebar__section">
+            <SidebarSectionLabel icon={<Film className="size-3" />} title="Video-Quellen" />
+            {videoSources.map((source) => (
+              <SourceLaneLabel
+                key={source.id}
+                source={source}
+                color={colorForSourceId(source.id, sourceIds)}
+                isActive={source.id === activeVideoId}
+                hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
+                onSetActiveHere={() => void setActiveVideoAt(playheadSec, source.id)}
+              />
+            ))}
+          </div>
+
+          <div className="timeline-sidebar__section">
+            <SidebarSectionLabel icon={<Mic className="size-3" />} title="Audio-Quellen" />
+            {audioRows.map(({ source, linkedVideoLabel }) => (
+              <SourceLaneLabel
+                key={source.id}
+                source={source}
+                color={colorForSourceId(source.id, sourceIds)}
+                linkedVideoLabel={linkedVideoLabel}
+                isActive={source.id === activeAudioId}
+                hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
+                onSetActiveHere={() => void setActiveAudioAt(playheadSec, source.id)}
+              />
+            ))}
+          </div>
 
           {project.transcript.length > 0 && (
-            <SubtitleLane
-              transcript={project.transcript}
-              pixelsPerSecond={pixelsPerSecond}
-              trackWidthPx={trackWidthPx}
-              onSeek={seek}
-            />
+            <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Untertitel</LaneLabel>
           )}
-
           {project.heatmap.length > 0 && (
-            <HeatmapLane
-              heatmap={project.heatmap}
-              pixelsPerSecond={pixelsPerSecond}
-              trackWidthPx={trackWidthPx}
-            />
+            <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Heatmap</LaneLabel>
           )}
+          <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Schnitt</LaneLabel>
+          <div style={{ height: BOTTOM_SPACER_PX }} />
+        </div>
 
-          <CutLane
-            keptRanges={project.edit.keptRanges}
-            pixelsPerSecond={pixelsPerSecond}
-            trackWidthPx={trackWidthPx}
-            isRazorMode={isRazorMode}
-            onClick={handleCutLaneClick}
-            onDelete={(rangeId) => void deleteKeptRange(rangeId)}
-          />
+        <div className="timeline-body-wrapper">
+          <div ref={bodyScrollRef} className="timeline-body" onScroll={handleBodyScroll}>
+            <div className="relative" style={{ width: trackWidthPx }}>
+              <TimeRuler
+                pixelsPerSecond={pixelsPerSecond}
+                trackWidthPx={trackWidthPx}
+                onSeek={seek}
+              />
 
-          <div
-            className="timeline-playhead"
-            style={{ left: LANE_LABEL_WIDTH_PX + playheadSec * pixelsPerSecond }}
-          />
+              <div className="timeline-section">
+                <BodySectionDivider trackWidthPx={trackWidthPx} />
+                {videoSources.map((source) => (
+                  <SourceLaneTrack
+                    key={source.id}
+                    source={source}
+                    pixelsPerSecond={pixelsPerSecond}
+                    trackWidthPx={trackWidthPx}
+                    color={colorForSourceId(source.id, sourceIds)}
+                    activeIntervals={project.edit.activeVideoIntervals}
+                    sources={project.sources}
+                    timelineDurationSec={project.timelineDurationSec}
+                    onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
+                    onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
+                  />
+                ))}
+              </div>
+
+              <div className="timeline-section">
+                <BodySectionDivider trackWidthPx={trackWidthPx} />
+                {audioRows.map(({ source }) => (
+                  <SourceLaneTrack
+                    key={source.id}
+                    source={source}
+                    pixelsPerSecond={pixelsPerSecond}
+                    trackWidthPx={trackWidthPx}
+                    color={colorForSourceId(source.id, sourceIds)}
+                    activeIntervals={project.edit.activeAudioIntervals}
+                    sources={project.sources}
+                    timelineDurationSec={project.timelineDurationSec}
+                    onWaveformClick={(atSec) => void setActiveAudioAt(atSec, source.id)}
+                    onMoveBoundary={(leftId, atSec) => void moveActiveAudioBoundary(leftId, atSec)}
+                  />
+                ))}
+              </div>
+
+              {project.transcript.length > 0 && (
+                <SubtitleLaneTrack
+                  transcript={project.transcript}
+                  pixelsPerSecond={pixelsPerSecond}
+                  trackWidthPx={trackWidthPx}
+                  onSeek={seek}
+                />
+              )}
+
+              {project.heatmap.length > 0 && (
+                <HeatmapLaneTrack
+                  heatmap={project.heatmap}
+                  pixelsPerSecond={pixelsPerSecond}
+                  trackWidthPx={trackWidthPx}
+                />
+              )}
+
+              <CutLaneTrack
+                keptRanges={project.edit.keptRanges}
+                pixelsPerSecond={pixelsPerSecond}
+                trackWidthPx={trackWidthPx}
+                isRazorMode={isRazorMode}
+                onClick={handleCutLaneClick}
+                onDelete={(rangeId) => void deleteKeptRange(rangeId)}
+              />
+
+              <div style={{ height: BOTTOM_SPACER_PX }} />
+              <div className="timeline-playhead" style={{ left: playheadLeftPx }} />
+            </div>
+          </div>
+
+          {showHorizontalScrollbar && (
+            <div className="timeline-hscrollbar" onPointerDown={handleHscrollTrackPointerDown}>
+              <div
+                className="timeline-hscrollbar__thumb"
+                style={{ width: thumbWidthPx, left: thumbLeftPx }}
+                onPointerDown={handleHscrollThumbPointerDown}
+                onPointerMove={handleHscrollThumbPointerMove}
+                onPointerUp={handleHscrollThumbPointerUp}
+              />
+            </div>
+          )}
         </div>
       </div>
 

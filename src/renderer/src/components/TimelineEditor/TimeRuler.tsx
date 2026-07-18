@@ -1,5 +1,3 @@
-import { LANE_LABEL_WIDTH_PX } from './constants'
-
 interface TimeRulerProps {
   pixelsPerSecond: number
   trackWidthPx: number
@@ -29,23 +27,23 @@ function TimeRuler({ pixelsPerSecond, trackWidthPx, onSeek }: TimeRulerProps): R
   for (let t = 0; t <= trackDurationSec; t += interval) ticks.push(t)
 
   return (
-    <div className="time-ruler">
-      {/* empty spacer — keeps the ruler's track aligned with every other lane's track below it */}
-      <div className="time-ruler__label" style={{ width: LANE_LABEL_WIDTH_PX }} />
-      <div
-        className="time-ruler__track"
-        style={{ width: trackWidthPx }}
-        onClick={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect()
-          onSeek((e.clientX - rect.left) / pixelsPerSecond)
-        }}
-      >
-        {ticks.map((t) => (
-          <div key={t} className="time-ruler__tick" style={{ left: t * pixelsPerSecond }}>
-            <span>{formatTime(t)}</span>
-          </div>
-        ))}
-      </div>
+    <div
+      className="time-ruler"
+      style={{ width: trackWidthPx }}
+      onClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        onSeek((e.clientX - rect.left) / pixelsPerSecond)
+      }}
+    >
+      {ticks.map((t, index) => (
+        <div
+          key={t}
+          className={`time-ruler__tick${index === 0 ? ' time-ruler__tick--first' : ''}`}
+          style={{ left: t * pixelsPerSecond }}
+        >
+          <span>{formatTime(t)}</span>
+        </div>
+      ))}
     </div>
   )
 }

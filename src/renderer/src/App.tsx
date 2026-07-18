@@ -56,14 +56,14 @@ function App(): React.JSX.Element {
         <StartScreen />
       ) : (
         <div
-          className="relative flex min-h-0 flex-1"
+          className="relative flex min-h-0 min-w-0 flex-1"
           onDragEnter={handleDragEnter}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
           <ToolSidebar />
-          <div className="min-h-0 flex-1">
+          <div className="min-h-0 min-w-0 flex-1">
             <TimelineEditor />
           </div>
 

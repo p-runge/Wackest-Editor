@@ -1,6 +1,14 @@
 /* Pixel-precise lane layout for the timeline: absolutely-positioned blocks over a shared
    time axis. Kept as plain CSS (rather than Tailwind utilities) since positions are computed
-   from seconds * pixelsPerSecond in JS and applied via inline styles. */
+   from seconds * pixelsPerSecond in JS and applied via inline styles.
+
+   The timeline is two separate scroll containers side by side — a fixed-width sidebar (row
+   labels) and a horizontally+vertically scrollable body (ruler + track content) — kept in sync
+   by JS on every scroll event. This avoids position: sticky entirely for the horizontal axis
+   (the sidebar simply never scrolls sideways, since it isn't part of the scrolling content), and
+   confines vertical position: sticky to two flat, non-overlapping regions (the sidebar's own
+   column and the body's own column), so nothing ever needs to be layered "in front of" one
+   sticky element but "behind" another within the same stacking context. */
 
 .preview-player {
   width: 100%;
@@ -24,24 +32,98 @@
   object-fit: contain;
 }
 
-.time-ruler {
-  display: flex;
-  height: 24px;
+.timeline-sidebar {
+  width: 140px;
+  flex-shrink: 0;
+  /* Not user-scrollable — its scrollTop is driven programmatically in sync with .timeline-body,
+     so it needs no scrollbar of its own (overflow: hidden still allows scrollTop to be set). */
+  overflow: hidden;
+  border-right: 1px solid var(--color-border);
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.timeline-sidebar__spacer {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--color-card);
   border-bottom: 1px solid var(--color-border);
 }
 
-.time-ruler__label {
-  flex-shrink: 0;
+.timeline-sidebar__section-label {
   position: sticky;
-  left: 0;
+  top: 24px; /* height of .timeline-sidebar__spacer, in sync with .time-ruler in the body */
   z-index: 2;
-  background: var(--color-card);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.time-ruler__track {
+.timeline-body-wrapper {
   position: relative;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-body {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+/* Reserves zero layout space for the horizontal scrollbar specifically (vertical scrollbar is
+   untouched) — it's replaced by the custom .timeline-hscrollbar overlay below, drawn in the
+   BOTTOM_SPACER_PX gap already reserved at the bottom of the row content. */
+.timeline-body::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
+/* Styled to match macOS's auto-hide overlay scrollbars: invisible at rest, fades in on hover
+   (or while dragging), thin translucent rounded thumb with no visible track. */
+.timeline-hscrollbar {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 1px;
+  height: 7px;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.timeline-body-wrapper:hover .timeline-hscrollbar,
+.timeline-hscrollbar:hover,
+.timeline-hscrollbar:has(.timeline-hscrollbar__thumb:active) {
+  opacity: 1;
+}
+
+.timeline-hscrollbar__thumb {
+  position: absolute;
+  top: 0;
+  height: 7px;
+  border-radius: 3.5px;
+  background: rgba(255, 255, 255, 0.35);
+  cursor: grab;
+  transition: background-color 0.1s ease;
+}
+
+.timeline-hscrollbar__thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.timeline-hscrollbar__thumb:active {
+  background: rgba(255, 255, 255, 0.6);
+  cursor: grabbing;
+}
+
+.time-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 24px;
+  cursor: pointer;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .time-ruler__tick {
@@ -55,30 +137,28 @@
   white-space: nowrap;
 }
 
-/* shared lane layout: a label column + a relatively-positioned track for absolutely-placed blocks */
-.source-lane,
-.subtitle-lane,
-.heatmap-lane,
-.cut-lane {
-  display: flex;
-  align-items: stretch;
-  border-bottom: 1px solid var(--color-border);
-  border-left: 2px solid transparent;
+.time-ruler__tick--first {
+  border-left: none;
 }
 
-.source-lane--active {
-  border-left-color: var(--tile-color, var(--color-foreground));
-}
-
-.source-lane__label,
-.subtitle-lane__label,
-.heatmap-lane__label,
-.cut-lane__label {
+.timeline-section__divider {
   position: sticky;
-  left: 0;
+  top: 24px; /* height of .time-ruler, in sync with .timeline-sidebar__section-label */
   z-index: 2;
-  width: 120px;
-  flex-shrink: 0;
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.lane-label {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.source-lane__label {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -86,6 +166,7 @@
   font-size: 12px;
   background: var(--color-card);
   border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--color-border);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -138,8 +219,7 @@
 .heatmap-lane__track,
 .cut-lane__track {
   position: relative;
-  flex-shrink: 0;
-  min-height: 28px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .source-lane__segment {
@@ -248,5 +328,5 @@
   width: 2px;
   background: var(--color-destructive);
   pointer-events: none;
-  z-index: 3;
+  z-index: 5;
 }
