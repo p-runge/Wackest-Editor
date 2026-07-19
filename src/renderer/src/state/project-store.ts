@@ -32,7 +32,6 @@ async function recordRecentProject(projectDir: string, name: string): Promise<vo
     })
   }
   useSettingsStore.setState({ settings: merged, loaded: true })
-  await window.api.settings.set(merged)
 }
 
 interface ProjectState {
