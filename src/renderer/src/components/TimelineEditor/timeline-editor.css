@@ -220,9 +220,100 @@
 
 .source-lane__track,
 .subtitle-lane__track,
-.heatmap-lane__track {
+.heatmap-lane__track,
+.cut-lane__track {
   position: relative;
   border-bottom: 1px solid var(--color-border);
+}
+
+.cut-lane__track {
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+
+.cut-lane__segment {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+  transition:
+    opacity 0.1s ease,
+    box-shadow 0.1s ease;
+}
+
+.cut-lane__segment--cut {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(234, 179, 8, 0.16),
+    rgba(234, 179, 8, 0.16) 6px,
+    rgba(234, 179, 8, 0.3) 6px,
+    rgba(234, 179, 8, 0.3) 12px
+  );
+  border: 1px solid rgba(234, 179, 8, 0.5);
+}
+
+.cut-lane__segment--interactive {
+  cursor: grab;
+}
+
+.cut-lane__segment--interactive:active {
+  cursor: grabbing;
+}
+
+/* The chunk being dragged, at its resolved (snapped/hopped/pushed-into) position — dashed border
+   marks it as a preview; where it draws is exactly where dropping will place it. */
+.cut-lane__segment--drag-preview {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1.5px dashed var(--color-foreground);
+  z-index: 6;
+}
+
+/* A neighbor chunk shown at the position it would be pushed to if the drag were dropped here —
+   amber signals "this one moves too", matching the cut/attention color family. */
+.cut-lane__segment--pushed {
+  box-shadow: inset 0 0 0 1.5px rgba(234, 179, 8, 0.8);
+}
+
+/* Full-height marker at a split point between two adjacent, still-kept clips — otherwise
+   invisible, since two touching kept blocks render identically and merge visually. */
+.timeline-split-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-foreground);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.cut-lane__delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  padding: 1px;
+  border-radius: 2px;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+
+.cut-lane__delete:hover {
+  background: color-mix(in srgb, var(--color-destructive) 20%, transparent);
+  color: var(--color-destructive);
+}
+
+.cut-lane__drag-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(220, 38, 38, 0.22);
+  border-left: 1px solid var(--color-destructive);
+  border-right: 1px solid var(--color-destructive);
+  pointer-events: none;
+  z-index: 4;
 }
 
 .source-lane__segment {

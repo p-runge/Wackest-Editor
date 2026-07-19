@@ -15,10 +15,50 @@ import {
   insertActiveSwitch,
   moveIntervalBoundary,
   initializeKeptRanges,
+  resolveIntervalAt,
   resolveVideoSourceId,
-  resolveAudioSourceId
+  defaultVideoSourceAt,
+  defaultAudioSourceAt,
+  fillActiveIntervalGaps,
+  splitKeptRangeAt,
+  removeKeptRange,
+  deleteKeptRangeById,
+  resolveMovePlacement
 } from '../lib/timeline-edit'
 import { useSettingsStore } from './settings-store'
+
+/**
+ * Materializes full coverage for both active tracks after anything that can change source
+ * alignment or the source list itself (sync, re-sync, a manual offset edit, removing a source) —
+ * see `fillActiveIntervalGaps`. Video is filled first since the audio default depends on it
+ * (prefers the resolved video source's own audio).
+ */
+function withFullActiveCoverage(project: Project): Project {
+  const activeVideoIntervals = fillActiveIntervalGaps(
+    project.edit.activeVideoIntervals,
+    project.sources,
+    project.timelineDurationSec,
+    (atSec) => defaultVideoSourceAt(project.sources, atSec)
+  )
+  const activeAudioIntervals = fillActiveIntervalGaps(
+    project.edit.activeAudioIntervals,
+    project.sources,
+    project.timelineDurationSec,
+    (atSec) =>
+      defaultAudioSourceAt(
+        project.sources,
+        atSec,
+        resolveVideoSourceId(activeVideoIntervals, atSec)
+      ),
+    // The audio default flips at every video switch (it prefers that video's own audio), so gap
+    // fills must split there too — same reasoning fillActiveIntervalGaps documents.
+    activeVideoIntervals.flatMap((iv) => [iv.startSec, iv.endSec])
+  )
+  return {
+    ...project,
+    edit: { ...project.edit, activeVideoIntervals, activeAudioIntervals }
+  }
+}
 
 async function recordRecentProject(projectDir: string, name: string): Promise<void> {
   const settingsState = useSettingsStore.getState()
@@ -80,6 +120,10 @@ interface ProjectState {
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
   moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
   moveActiveAudioBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
+  splitKeptRangeAtPlayhead: (atSec: number) => Promise<void>
+  cutRange: (startSec: number, endSec: number) => Promise<void>
+  moveKeptRange: (id: string, newStartSec: number) => Promise<void>
+  deleteKeptRange: (id: string) => Promise<void>
   runExport: () => Promise<void>
 }
 
@@ -159,9 +203,14 @@ export const useProjectStore = create<ProjectState>()(
               })
               return
             }
-            set({ project: result.project, projectDir: result.projectDir, projectError: null })
+            // Heals any project saved before full active-interval coverage was guaranteed (or
+            // hand-edited into an incomplete state) — loading is the one place every project,
+            // however old, passes through before anything else can read it.
+            const project = withFullActiveCoverage(result.project)
+            set({ project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
-            await recordRecentProject(result.projectDir, result.project.name)
+            await recordRecentProject(result.projectDir, project.name)
+            await get().saveProject()
           } catch (err) {
             set({ projectError: String(err) })
           }
@@ -181,9 +230,12 @@ export const useProjectStore = create<ProjectState>()(
               })
               return
             }
-            set({ project: result.project, projectDir: result.projectDir, projectError: null })
+            // See openProject's comment on withFullActiveCoverage.
+            const project = withFullActiveCoverage(result.project)
+            set({ project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
-            await recordRecentProject(result.projectDir, result.project.name)
+            await recordRecentProject(result.projectDir, project.name)
+            await get().saveProject()
           } catch (err) {
             set({ projectError: String(err) })
           }
@@ -208,14 +260,17 @@ export const useProjectStore = create<ProjectState>()(
               set({ invalidProject: null })
               return
             }
+            // See openProject's comment on withFullActiveCoverage.
+            const project = withFullActiveCoverage(result.project)
             set({
-              project: result.project,
+              project,
               projectDir: result.projectDir,
               invalidProject: null,
               projectError: null
             })
             useProjectStore.temporal.getState().clear()
-            await recordRecentProject(result.projectDir, result.project.name)
+            await recordRecentProject(result.projectDir, project.name)
+            await get().saveProject()
           } catch (err) {
             set({ invalidProject: null, projectError: String(err) })
           }
@@ -250,7 +305,9 @@ export const useProjectStore = create<ProjectState>()(
               sources: state.project.sources.filter((source) => source.id !== sourceId)
             }
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
-            return { project: updated }
+            // The removed source may have owned active-video/audio intervals — re-fill so the
+            // timeline never has a gap where footage still exists but nothing is active.
+            return { project: withFullActiveCoverage(updated) }
           })
           await get().saveProject()
           try {
@@ -282,7 +339,10 @@ export const useProjectStore = create<ProjectState>()(
                   keptRanges: initializeKeptRanges(updated.timelineDurationSec)
                 }
               }
-              return { project: updated }
+              // Every instant with any footage gets a real active-video/audio interval — a
+              // (re-)sync is exactly when the source list or their alignment can have changed,
+              // e.g. a new import filling a stretch that used to be a hard-cut gap.
+              return { project: withFullActiveCoverage(updated) }
             })
             await get().saveProject()
           } catch (err) {
@@ -309,7 +369,9 @@ export const useProjectStore = create<ProjectState>()(
             })
             const updated: Project = { ...state.project, sources }
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
-            return { project: updated }
+            // A manual offset shifts where this source's footage sits in unified time, which can
+            // open or close active-interval gaps — re-fill so coverage stays complete.
+            return { project: withFullActiveCoverage(updated) }
           })
           await get().saveProject()
         },
@@ -412,12 +474,13 @@ export const useProjectStore = create<ProjectState>()(
           let changed = false
           set((state) => {
             if (!state.project) return state
-            const currentActiveId = resolveVideoSourceId(
-              state.project.edit.activeVideoIntervals,
-              state.project.sources,
-              atSec
-            )
-            if (currentActiveId === sourceId) return state
+            // Skip only when an EXPLICIT interval already names this source here. Comparing the
+            // fallback-resolved id instead would wrongly no-op the case where the clicked source
+            // is only active via fallback (e.g. the explicit interval's own source ran out of
+            // footage) — pinning it explicitly is a real change: it fixes the lane highlight and
+            // survives later edits that would shift the fallback.
+            const explicit = resolveIntervalAt(state.project.edit.activeVideoIntervals, atSec)
+            if (explicit?.value === sourceId) return state
             changed = true
             const activeVideoIntervals = insertActiveSwitch(
               state.project.edit.activeVideoIntervals,
@@ -436,18 +499,9 @@ export const useProjectStore = create<ProjectState>()(
           let changed = false
           set((state) => {
             if (!state.project) return state
-            const activeVideoId = resolveVideoSourceId(
-              state.project.edit.activeVideoIntervals,
-              state.project.sources,
-              atSec
-            )
-            const currentActiveAudioId = resolveAudioSourceId(
-              state.project.edit.activeAudioIntervals,
-              state.project.sources,
-              atSec,
-              activeVideoId
-            )
-            if (currentActiveAudioId === sourceId) return state
+            // Same explicit-only check as setActiveVideoAt — see the comment there.
+            const explicit = resolveIntervalAt(state.project.edit.activeAudioIntervals, atSec)
+            if (explicit?.value === sourceId) return state
             changed = true
             const activeAudioIntervals = insertActiveSwitch(
               state.project.edit.activeAudioIntervals,
@@ -494,6 +548,55 @@ export const useProjectStore = create<ProjectState>()(
             }
           })
           await get().saveProject()
+        },
+
+        splitKeptRangeAtPlayhead: async (atSec) => {
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = splitKeptRangeAt(state.project.edit.keptRanges, atSec)
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
+        },
+
+        cutRange: async (startSec, endSec) => {
+          if (endSec <= startSec) return
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = removeKeptRange(state.project.edit.keptRanges, startSec, endSec)
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
+        },
+
+        moveKeptRange: async (id, newStartSec) => {
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = resolveMovePlacement(state.project.edit.keptRanges, id, newStartSec)
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
+        },
+
+        deleteKeptRange: async (id) => {
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = deleteKeptRangeById(state.project.edit.keptRanges, id)
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
         },
 
         runExport: async () => {

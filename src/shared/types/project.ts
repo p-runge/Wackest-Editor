@@ -97,11 +97,18 @@ export const TrackIntervalSchema = z.object({
 })
 export type TrackInterval = z.infer<typeof TrackIntervalSchema>
 
-// non-destructive: only kept ranges are exported, source/track lanes stay full-length
+// non-destructive: only kept ranges are exported, source/track lanes stay full-length.
+// startSec/endSec are the *placement* on the shared timeline (where this clip sits, and hence
+// what it exports as/next to). contentStartSec is the *content* origin — which stretch of raw/
+// synced footage it actually plays, i.e. where it was originally picked up from before being
+// dragged to a new placement (Schnitt mode's free move). Omitted/equal-to-startSec means
+// "not displaced": content and placement are the same, which is the case for every kept range
+// until it's explicitly moved — see `resolveMovePlacement` in lib/timeline-edit.ts.
 export const KeptRangeSchema = z.object({
   id: z.string(),
   startSec: z.number(),
   endSec: z.number(),
+  contentStartSec: z.number().optional(),
   label: z.string().optional()
 })
 export type KeptRange = z.infer<typeof KeptRangeSchema>

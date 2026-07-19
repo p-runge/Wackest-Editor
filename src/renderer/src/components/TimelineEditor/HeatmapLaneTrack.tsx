@@ -1,11 +1,20 @@
-import type { HeatmapPoint } from '@shared/types/project'
 import { colorForScore } from '../../lib/colors'
 import { findHeatmapPeakIndices } from '../../lib/heatmap'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import { SIMPLE_LANE_HEIGHT_PX } from './constants'
 
+// Structurally compatible with HeatmapPoint (which also carries a `provider` this lane doesn't
+// use), but loosened so Schnitt mode can pass in synthesized buckets — a raw point straddling a
+// cut or a reorder boundary gets projected onto the packed timeline as more than one piece.
+interface HeatmapLaneBucket {
+  startSec: number
+  endSec: number
+  score: number
+  reason?: string
+}
+
 interface HeatmapLaneTrackProps {
-  heatmap: HeatmapPoint[]
+  heatmap: HeatmapLaneBucket[]
   pixelsPerSecond: number
   trackWidthPx: number
 }

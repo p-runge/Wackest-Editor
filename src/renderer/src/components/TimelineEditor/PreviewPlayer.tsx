@@ -1,7 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
-import { mapUnifiedTimeToLocal, mapLocalTimeToUnified } from '../../lib/timeline-edit'
+import {
+  mapUnifiedTimeToLocal,
+  mapLocalTimeToUnified,
+  mapPlacementTimeToContentTime,
+  findKeptRangeAt,
+  keptRangeContentSpan,
+  computeProgramEndSec
+} from '../../lib/timeline-edit'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
 import { toMediaUrl } from '@shared/types/media-url'
@@ -17,7 +24,13 @@ function PreviewPlayer(): React.JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
 
-  const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
+  // The playhead lives on the program timeline (chunk placement); the media elements live in
+  // content time. All source resolution and local-time seeking goes through this mapping, so a
+  // moved chunk actually PLAYS its moved content at its new position. Null in a cut gap.
+  const keptRanges = project?.edit.keptRanges ?? []
+  const contentSec = project ? mapPlacementTimeToContentTime(keptRanges, playheadSec) : null
+
+  const { activeVideoId, activeAudioId } = useResolvedSources(project, contentSec ?? -1)
 
   const videoSource = project?.sources.find((s) => s.id === activeVideoId)
   const audioSource =
@@ -27,23 +40,23 @@ function PreviewPlayer(): React.JSX.Element | null {
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || !videoSource) return
-    const localTime = mapUnifiedTimeToLocal(videoSource, playheadSec)
+    if (!video || !videoSource || contentSec === null) return
+    const localTime = mapUnifiedTimeToLocal(videoSource, contentSec)
     if (localTime === null) return
     if (Math.abs(video.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
       video.currentTime = localTime
     }
-  }, [playheadSec, videoSource])
+  }, [contentSec, videoSource])
 
   useEffect(() => {
     const audio = audioRef.current
-    if (!audio || !audioSource) return
-    const localTime = mapUnifiedTimeToLocal(audioSource, playheadSec)
+    if (!audio || !audioSource || contentSec === null) return
+    const localTime = mapUnifiedTimeToLocal(audioSource, contentSec)
     if (localTime === null) return
     if (Math.abs(audio.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
       audio.currentTime = localTime
     }
-  }, [playheadSec, audioSource])
+  }, [contentSec, audioSource])
 
   useEffect(() => {
     if (isPlaying) {
@@ -55,56 +68,83 @@ function PreviewPlayer(): React.JSX.Element | null {
     }
   }, [isPlaying, videoSource, audioSource])
 
-  // Interval bounds are exclusive at their end, so the exact last instant of the timeline
-  // resolves no active source at all — the <video>/<audio> elements unmount right before their
-  // native "ended" event would fire, which would otherwise leave isPlaying stuck true with
-  // nothing left to drive it forward. Force a clean stop once the playhead truly reaches the end.
+  // Interval bounds are exclusive at their end, so the exact last instant of the program (the
+  // last chunk's placement end — 0 when the timeline is empty) resolves no active source at all:
+  // the <video>/<audio> elements unmount right before their native "ended" event would fire,
+  // which would otherwise leave isPlaying stuck true with nothing left to drive it forward.
+  // Force a clean stop once the playhead truly reaches the program end.
   useEffect(() => {
-    if (isPlaying && project && playheadSec >= project.timelineDurationSec) pause()
+    if (isPlaying && project && playheadSec >= computeProgramEndSec(project.edit.keptRanges)) {
+      pause()
+    }
   }, [isPlaying, playheadSec, project, pause])
 
-  // Entering a hard-cut gap (no source has footage at this unified time) unmounts the <video>/
-  // <audio> elements, so nothing is left to drive `playheadSec` forward via "timeupdate" — without
-  // this, playback would silently freeze with isPlaying stuck true instead of visibly stopping.
+  // Entering a stretch with nothing to play unmounts the <video>/<audio> elements, so nothing is
+  // left to drive `playheadSec` forward via "timeupdate". In a cut gap, playback skips straight
+  // to the next chunk and keeps going — the program only truly ends after the last chunk. Only a
+  // stretch whose *content* has no source at all (hard-cut gap) still stops playback.
   useEffect(() => {
-    if (isPlaying && !videoSource && !audioSource) pause()
-  }, [isPlaying, videoSource, audioSource, pause])
-
-  // Called once the currently playing source has played past its own footage (native "ended", or
-  // a raw file that runs on past its usable segment). Jumps to wherever this source's footage
-  // ends on the unified timeline, so the active-source resolution above can pick up whatever plays
-  // next there (another source, or a hard-cut gap) — only truly pausing at the actual timeline end.
-  const advancePastGap = (): void => {
-    if (!project || !videoSource) return
-    const sourceEndUnifiedSec = videoSource.syncSegments.reduce(
-      (max, seg) => Math.max(max, seg.localEndSec + seg.offsetSec),
-      0
-    )
-    if (sourceEndUnifiedSec >= project.timelineDurationSec - RESYNC_THRESHOLD_SEC) {
-      pause()
-    } else {
-      seek(sourceEndUnifiedSec)
+    if (!isPlaying || !project || videoSource || audioSource) return
+    if (contentSec === null) {
+      const next = project.edit.keptRanges
+        .filter((r) => r.startSec > playheadSec)
+        .sort((a, b) => a.startSec - b.startSec)[0]
+      if (next) seek(next.startSec)
+      else pause()
+      return
     }
+    pause()
+  }, [isPlaying, videoSource, audioSource, contentSec, playheadSec, project, seek, pause])
+
+  // Called when playback runs past the end of the current chunk's content (or the playing file's
+  // own footage). Program playback advances in PLACEMENT order, skipping cut gaps: jump straight
+  // to the next chunk's start, and only pause once no chunk follows (end of the program).
+  const advancePastChunk = (): void => {
+    if (!project) return
+    const chunk = findKeptRangeAt(project.edit.keptRanges, playheadSec)
+    if (!chunk) {
+      pause()
+      return
+    }
+    const next = project.edit.keptRanges
+      .filter((r) => r.startSec >= chunk.endSec)
+      .sort((a, b) => a.startSec - b.startSec)[0]
+    if (next) seek(next.startSec)
+    else pause()
   }
 
   const handleTimeUpdate = (): void => {
-    if (!isPlaying || !videoSource) return
+    if (!isPlaying || !videoSource || !project) return
     const video = videoRef.current
     if (!video) return
-    const unified = mapLocalTimeToUnified(videoSource, video.currentTime)
-    if (unified !== null) seek(unified)
-    else advancePastGap()
+    const chunk = findKeptRangeAt(project.edit.keptRanges, playheadSec)
+    if (!chunk) return
+    const contentUnified = mapLocalTimeToUnified(videoSource, video.currentTime)
+    const span = keptRangeContentSpan(chunk)
+    if (contentUnified !== null && contentUnified < span.endSec) {
+      seek(chunk.startSec + (contentUnified - span.startSec))
+    } else {
+      advancePastChunk()
+    }
   }
 
   const handleEnded = (): void => {
-    if (videoRef.current) advancePastGap()
+    if (videoRef.current) advancePastChunk()
   }
 
   if (!project) return null
 
+  if (contentSec === null) {
+    return (
+      <div className="preview-player preview-player--empty">
+        Herausgeschnittener Bereich — hier wird nichts abgespielt.
+      </div>
+    )
+  }
+
   if (!videoSource) {
     const inHardCutGap = project.hardCutMarkers.some(
-      (gapStartSec) => playheadSec >= gapStartSec && playheadSec < gapStartSec + NO_OVERLAP_GAP_SEC
+      (gapStartSec) => contentSec >= gapStartSec && contentSec < gapStartSec + NO_OVERLAP_GAP_SEC
     )
     return (
       <div className="preview-player preview-player--empty">

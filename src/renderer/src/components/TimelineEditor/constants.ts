@@ -9,8 +9,12 @@ export const SECTION_HEADER_HEIGHT_PX = 24
 // Row height for a source (video/audio) lane, shared by its sidebar label and body track.
 export const SOURCE_LANE_HEIGHT_PX = 44
 
-// Row height for the subtitle/heatmap/cut lanes, shared by their sidebar label and body track.
+// Row height for the subtitle/heatmap lanes, shared by their sidebar label and body track.
 export const SIMPLE_LANE_HEIGHT_PX = 28
+
+// Row height for the Schnitt lane — a bit taller than a simple lane since, in Schnitt mode, each
+// kept block also carries a drag handle and a delete button alongside its order badge.
+export const CUT_LANE_HEIGHT_PX = 32
 
 // Blank trailing space at the bottom of both columns' content — the body's horizontal scrollbar
 // is styled to take up no layout space (see .timeline-body::-webkit-scrollbar:horizontal), so

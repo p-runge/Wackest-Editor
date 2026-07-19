@@ -3,6 +3,7 @@ import { useProjectStore } from '../state/project-store'
 import { usePlaybackStore } from '../state/playback-store'
 import { isTypingTarget } from '../lib/dom'
 import { RESYNC_THRESHOLD_SEC } from '../lib/playback'
+import { computeProgramEndSec } from '../lib/timeline-edit'
 
 export const SKIP_STEP_SEC = 5
 
@@ -29,7 +30,12 @@ export function useGlobalShortcuts(): void {
       const project = useProjectStore.getState().project
       if (!project) return
       const playback = usePlaybackStore.getState()
-      const endSec = Math.max(0, project.timelineDurationSec - RESYNC_THRESHOLD_SEC)
+      // End of the program = last placed chunk's end (see computeProgramEndSec), not the raw
+      // synced footage length — chunks may end before or after that.
+      const endSec = Math.max(
+        0,
+        computeProgramEndSec(project.edit.keptRanges) - RESYNC_THRESHOLD_SEC
+      )
 
       switch (e.code) {
         case 'Space':

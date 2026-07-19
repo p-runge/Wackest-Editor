@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Film, Mic, SwitchCamera, Upload, ZoomIn } from 'lucide-react'
+import { Film, Mic, Scissors, SwitchCamera, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
@@ -8,22 +8,27 @@ import SourceLaneTrack from './SourceLaneTrack'
 import LaneLabel from './LaneLabel'
 import SubtitleLaneTrack from './SubtitleLaneTrack'
 import HeatmapLaneTrack from './HeatmapLaneTrack'
+import CutLaneTrack from './CutLaneTrack'
 import PreviewPlayer from './PreviewPlayer'
 import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
+import CutTool from './CutTool'
 import { colorForSourceId } from '../../lib/colors'
 import {
   mapUnifiedTimeToLocal,
-  resolveVideoSourceId,
-  resolveAudioSourceId,
-  fillIntervalGaps
+  computeCutLaneSegments,
+  computeLaneChunks,
+  computeProgramEndSec,
+  mapPlacementTimeToContentTime,
+  mapContentRangeToPlacementRanges
 } from '../../lib/timeline-edit'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import {
   BOTTOM_SPACER_PX,
   RULER_HEIGHT_PX,
   SECTION_HEADER_HEIGHT_PX,
-  SIMPLE_LANE_HEIGHT_PX
+  SIMPLE_LANE_HEIGHT_PX,
+  CUT_LANE_HEIGHT_PX
 } from './constants'
 import { Button } from '../ui/button'
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
@@ -34,6 +39,12 @@ import './timeline-editor.css'
 const PREVIEW_MIN_WIDTH_PX = 280
 const PREVIEW_MAX_WIDTH_PX = 960
 const PREVIEW_DEFAULT_WIDTH_PX = 480
+
+// Full-height cross-track overlays (hard-cut gaps, split markers) live in the same
+// `position: relative` container as the ruler and the Schnitt lane, so a plain `top: 0` would
+// paint over those two rows too, not just the content lanes below them. Offsetting by their
+// combined height keeps the overlays scoped to the lanes they're actually meant to mark.
+const BELOW_CUT_LANE_PX = RULER_HEIGHT_PX + CUT_LANE_HEIGHT_PX
 
 /** Sticky section title in the sidebar — stays pinned below the ruler spacer for as long as its
  *  section's rows (wrapped alongside it in the same parent) are still in view. */
@@ -72,6 +83,10 @@ function TimelineEditor(): React.JSX.Element | null {
   const setActiveAudioAt = useProjectStore((state) => state.setActiveAudioAt)
   const moveActiveVideoBoundary = useProjectStore((state) => state.moveActiveVideoBoundary)
   const moveActiveAudioBoundary = useProjectStore((state) => state.moveActiveAudioBoundary)
+  const splitKeptRangeAtPlayhead = useProjectStore((state) => state.splitKeptRangeAtPlayhead)
+  const cutRange = useProjectStore((state) => state.cutRange)
+  const moveKeptRange = useProjectStore((state) => state.moveKeptRange)
+  const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
   const importFiles = useProjectStore((state) => state.importFiles)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importError = useProjectStore((state) => state.importError)
@@ -81,34 +96,54 @@ function TimelineEditor(): React.JSX.Element | null {
   const playheadSec = usePlaybackStore((state) => state.playheadSec)
   const seek = usePlaybackStore((state) => state.seek)
 
-  const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
+  // The playhead lives on the program timeline (placement); everything media-related (which
+  // camera is active, which local file second to show) needs the underlying content time. Null
+  // while the playhead sits in a cut gap — nothing plays there. The `?? -1` sentinel below feeds
+  // resolution helpers a time no source/interval can ever cover, so they cleanly resolve nothing.
+  const playheadContentSec = project
+    ? mapPlacementTimeToContentTime(project.edit.keptRanges, playheadSec)
+    : null
 
-  // Gap-filled so the per-source lanes below highlight exactly the same active ranges the preview
-  // shows via useResolvedSources — including stretches that are active only through fallback (e.g.
-  // before the first-ever camera switch, or after a re-sync grew the timeline past the last one).
-  const effectiveVideoIntervals = useMemo(() => {
+  const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadContentSec ?? -1)
+
+  // The kept-range chunks every lane renders through: placement (program position) + content
+  // (which footage). A chunk is one vertical slice through ALL tracks — moving it moves waveforms,
+  // tints, transcript, and heatmap together; cut-out content isn't rendered anywhere.
+  const laneChunks = useMemo(() => {
     if (!project) return []
-    return fillIntervalGaps(
-      project.edit.activeVideoIntervals,
-      project.sources,
-      project.timelineDurationSec,
-      (atSec) => resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, atSec)
+    return computeLaneChunks(project.edit.keptRanges)
+  }, [project])
+
+  // Transcript/heatmap entries live in content time — project them onto the program timeline so
+  // they travel with the chunk their content belongs to. An entry straddling a cut or a chunk
+  // boundary comes back as several pieces (or none, if fully cut out).
+  const placedTranscript = useMemo(() => {
+    if (!project) return []
+    return project.transcript.flatMap((segment) =>
+      mapContentRangeToPlacementRanges(
+        project.edit.keptRanges,
+        segment.startSec,
+        segment.endSec
+      ).map((piece, i) => ({
+        id: `${segment.id}-${i}`,
+        startSec: piece.placementStartSec,
+        endSec: piece.placementEndSec,
+        text: segment.text
+      }))
     )
   }, [project])
 
-  const effectiveAudioIntervals = useMemo(() => {
+  const placedHeatmap = useMemo(() => {
     if (!project) return []
-    return fillIntervalGaps(
-      project.edit.activeAudioIntervals,
-      project.sources,
-      project.timelineDurationSec,
-      (atSec) =>
-        resolveAudioSourceId(
-          project.edit.activeAudioIntervals,
-          project.sources,
-          atSec,
-          resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, atSec)
-        )
+    return project.heatmap.flatMap((point) =>
+      mapContentRangeToPlacementRanges(project.edit.keptRanges, point.startSec, point.endSec).map(
+        (piece) => ({
+          startSec: piece.placementStartSec,
+          endSec: piece.placementEndSec,
+          score: point.score,
+          reason: point.reason
+        })
+      )
     )
   }, [project])
 
@@ -120,6 +155,7 @@ function TimelineEditor(): React.JSX.Element | null {
   const hscrollDragRef = useRef<{ startClientX: number; startScrollLeft: number } | null>(null)
   const [previewWidthPx, setPreviewWidthPx] = useState(PREVIEW_DEFAULT_WIDTH_PX)
   const previewResizeDragRef = useRef<{ startClientX: number; startWidthPx: number } | null>(null)
+  const [activeTool, setActiveTool] = useState<'camera-switcher' | 'cut-tool'>('camera-switcher')
 
   useEffect(() => {
     const el = bodyScrollRef.current
@@ -184,8 +220,30 @@ function TimelineEditor(): React.JSX.Element | null {
   }
 
   const sourceIds = project.sources.map((s) => s.id)
-  const trackWidthPx = Math.max(project.timelineDurationSec * pixelsPerSecond, bodyWidth)
+  const isCutTool = activeTool === 'cut-tool'
+  // One shared program timeline for both tools — Kamerawechsler and Schnitt render the exact
+  // same chunk-mapped lanes/axis, so edits made in either are immediately visible in the other.
+  // Only which interactions are live (active-source editing vs. cut/move/delete) depends on the
+  // tool.
+  //
+  // The program axis has no fixed end: it reaches to the last chunk's placement plus one full
+  // viewport of empty space, so there's always visible room to drag a chunk further right — each
+  // drop grows the axis, so repeated drags reach arbitrarily far. With no chunks left it collapses
+  // to just the viewport (the program is empty; its duration is 0:00).
+  const programEndSec = computeProgramEndSec(project.edit.keptRanges)
+  const axisEndSec = programEndSec + (pixelsPerSecond > 0 ? bodyWidth / pixelsPerSecond : 0)
+  const trackWidthPx = Math.max(axisEndSec * pixelsPerSecond, bodyWidth)
   const playheadLeftPx = playheadSec * pixelsPerSecond
+  const cutSegments = computeCutLaneSegments(project.edit.keptRanges, axisEndSec)
+  // Two still-kept clips touching with no cut between them are otherwise invisible as separate
+  // clips (they render identically and merge visually) — mark that boundary explicitly so a split
+  // is actually visible on the timeline the moment it's made, before either half is moved/deleted.
+  const splitBoundarySecs = cutSegments
+    .filter((segment, i) => {
+      const next = cutSegments[i + 1]
+      return segment.kept && next?.kept && segment.endSec === next.startSec
+    })
+    .map((segment) => segment.endSec)
 
   // Custom horizontal scrollbar geometry — replaces the native one (hidden via CSS, see
   // .timeline-body::-webkit-scrollbar:horizontal) so it can be visible without reserving any
@@ -259,6 +317,21 @@ function TimelineEditor(): React.JSX.Element | null {
       linkedVideoLabel: source.kind === 'video' ? source.label : undefined
     }))
 
+  // Waveform clicks arrive in placement time; Kamerawechsler edits (set active source) apply to
+  // content time. In a cut gap there's no content — the click just seeks instead of editing.
+  const handleWaveformClick = (
+    placementSec: number,
+    setActiveAt: (atSec: number, sourceId: string) => Promise<void>,
+    sourceId: string
+  ): void => {
+    if (isCutTool) {
+      seek(placementSec)
+      return
+    }
+    const contentSec = mapPlacementTimeToContentTime(project.edit.keptRanges, placementSec)
+    if (contentSec !== null) void setActiveAt(contentSec, sourceId)
+  }
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       <div className="flex flex-wrap items-start px-4 pt-3">
@@ -281,23 +354,42 @@ function TimelineEditor(): React.JSX.Element | null {
         />
 
         <div className="flex min-w-56 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]">
-          <CameraSwitcher
-            project={project}
-            playheadSec={playheadSec}
-            videoSources={videoSources}
-            audioRows={audioRows}
-            setActiveVideoAt={setActiveVideoAt}
-            setActiveAudioAt={setActiveAudioAt}
-          />
+          {activeTool === 'camera-switcher' ? (
+            // The switcher operates on content time (which camera is active in the underlying
+            // footage). In a cut gap there is no content — the -1 sentinel resolves no coverage
+            // anywhere, so every tile disables itself and switch attempts no-op.
+            <CameraSwitcher
+              project={project}
+              playheadSec={playheadContentSec ?? -1}
+              videoSources={videoSources}
+              audioRows={audioRows}
+              setActiveVideoAt={setActiveVideoAt}
+              setActiveAudioAt={setActiveAudioAt}
+            />
+          ) : (
+            <CutTool
+              project={project}
+              playheadSec={playheadSec}
+              splitKeptRangeAtPlayhead={splitKeptRangeAtPlayhead}
+              deleteKeptRange={deleteKeptRange}
+            />
+          )}
         </div>
       </div>
 
       <div className="mx-4 mt-2 flex items-center justify-between gap-2">
-        <Tabs defaultValue="camera-switcher">
+        <Tabs
+          value={activeTool}
+          onValueChange={(value) => setActiveTool(value as typeof activeTool)}
+        >
           <TabsList>
             <TabsTrigger value="camera-switcher" className="gap-1.5">
               <SwitchCamera className="size-3.5" />
               Kamerawechsler
+            </TabsTrigger>
+            <TabsTrigger value="cut-tool" className="gap-1.5">
+              <Scissors className="size-3.5" />
+              Schnitt Tool
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -319,6 +411,8 @@ function TimelineEditor(): React.JSX.Element | null {
         <div ref={sidebarScrollRef} className="timeline-sidebar" onScroll={handleSidebarScroll}>
           <div className="timeline-sidebar__spacer" style={{ height: RULER_HEIGHT_PX }} />
 
+          <LaneLabel heightPx={CUT_LANE_HEIGHT_PX}>Schnitt</LaneLabel>
+
           <div className="timeline-sidebar__section">
             <SidebarSectionLabel icon={<Film className="size-3" />} title="Video-Quellen" />
             {videoSources.map((source) => (
@@ -327,8 +421,11 @@ function TimelineEditor(): React.JSX.Element | null {
                 source={source}
                 color={colorForSourceId(source.id, sourceIds)}
                 isActive={source.id === activeVideoId}
-                hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
-                onSetActiveHere={() => void setActiveVideoAt(playheadSec, source.id)}
+                hasCoverage={mapUnifiedTimeToLocal(source, playheadContentSec ?? -1) !== null}
+                onSetActiveHere={() => {
+                  if (playheadContentSec !== null)
+                    void setActiveVideoAt(playheadContentSec, source.id)
+                }}
               />
             ))}
           </div>
@@ -342,8 +439,11 @@ function TimelineEditor(): React.JSX.Element | null {
                 color={colorForSourceId(source.id, sourceIds)}
                 linkedVideoLabel={linkedVideoLabel}
                 isActive={source.id === activeAudioId}
-                hasCoverage={mapUnifiedTimeToLocal(source, playheadSec) !== null}
-                onSetActiveHere={() => void setActiveAudioAt(playheadSec, source.id)}
+                hasCoverage={mapUnifiedTimeToLocal(source, playheadContentSec ?? -1) !== null}
+                onSetActiveHere={() => {
+                  if (playheadContentSec !== null)
+                    void setActiveAudioAt(playheadContentSec, source.id)
+                }}
               />
             ))}
           </div>
@@ -366,6 +466,18 @@ function TimelineEditor(): React.JSX.Element | null {
                 onSeek={seek}
               />
 
+              <CutLaneTrack
+                keptRanges={project.edit.keptRanges}
+                axisEndSec={axisEndSec}
+                pixelsPerSecond={pixelsPerSecond}
+                trackWidthPx={trackWidthPx}
+                interactive={isCutTool}
+                onSeek={seek}
+                onCutRange={(startSec, endSec) => void cutRange(startSec, endSec)}
+                onMoveRange={(id, newStartSec) => void moveKeptRange(id, newStartSec)}
+                onDelete={(id) => void deleteKeptRange(id)}
+              />
+
               <div className="timeline-section">
                 <BodySectionDivider trackWidthPx={trackWidthPx} />
                 {videoSources.map((source) => (
@@ -375,10 +487,14 @@ function TimelineEditor(): React.JSX.Element | null {
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
                     color={colorForSourceId(source.id, sourceIds)}
-                    activeIntervals={effectiveVideoIntervals}
+                    activeIntervals={project.edit.activeVideoIntervals}
+                    chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
-                    onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
+                    interactive={!isCutTool}
+                    onWaveformClick={(placementSec) =>
+                      handleWaveformClick(placementSec, setActiveVideoAt, source.id)
+                    }
                     onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
                   />
                 ))}
@@ -393,10 +509,14 @@ function TimelineEditor(): React.JSX.Element | null {
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
                     color={colorForSourceId(source.id, sourceIds)}
-                    activeIntervals={effectiveAudioIntervals}
+                    activeIntervals={project.edit.activeAudioIntervals}
+                    chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
-                    onWaveformClick={(atSec) => void setActiveAudioAt(atSec, source.id)}
+                    interactive={!isCutTool}
+                    onWaveformClick={(placementSec) =>
+                      handleWaveformClick(placementSec, setActiveAudioAt, source.id)
+                    }
                     onMoveBoundary={(leftId, atSec) => void moveActiveAudioBoundary(leftId, atSec)}
                   />
                 ))}
@@ -404,7 +524,7 @@ function TimelineEditor(): React.JSX.Element | null {
 
               {project.transcript.length > 0 && (
                 <SubtitleLaneTrack
-                  transcript={project.transcript}
+                  transcript={placedTranscript}
                   pixelsPerSecond={pixelsPerSecond}
                   trackWidthPx={trackWidthPx}
                   onSeek={seek}
@@ -413,22 +533,40 @@ function TimelineEditor(): React.JSX.Element | null {
 
               {project.heatmap.length > 0 && (
                 <HeatmapLaneTrack
-                  heatmap={project.heatmap}
+                  heatmap={placedHeatmap}
                   pixelsPerSecond={pixelsPerSecond}
                   trackWidthPx={trackWidthPx}
                 />
               )}
 
               <div style={{ height: BOTTOM_SPACER_PX }} />
-              {project.hardCutMarkers.map((gapStartSec) => (
+              {project.hardCutMarkers.flatMap((gapStartSec) =>
+                mapContentRangeToPlacementRanges(
+                  project.edit.keptRanges,
+                  gapStartSec,
+                  gapStartSec + NO_OVERLAP_GAP_SEC
+                ).map((piece) => (
+                  <div
+                    key={`${gapStartSec}-${piece.placementStartSec}`}
+                    className="timeline-hardcut-gap"
+                    style={{
+                      top: BELOW_CUT_LANE_PX,
+                      left: piece.placementStartSec * pixelsPerSecond,
+                      width: Math.max(
+                        1,
+                        (piece.placementEndSec - piece.placementStartSec) * pixelsPerSecond
+                      )
+                    }}
+                    title="Hard Cut: keine zeitliche Überschneidung"
+                  />
+                ))
+              )}
+              {splitBoundarySecs.map((atSec) => (
                 <div
-                  key={gapStartSec}
-                  className="timeline-hardcut-gap"
-                  style={{
-                    left: gapStartSec * pixelsPerSecond,
-                    width: NO_OVERLAP_GAP_SEC * pixelsPerSecond
-                  }}
-                  title="Hard Cut: keine zeitliche Überschneidung"
+                  key={atSec}
+                  className="timeline-split-marker"
+                  style={{ top: BELOW_CUT_LANE_PX, left: atSec * pixelsPerSecond }}
+                  title="Schnittpunkt"
                 />
               ))}
               <div className="timeline-playhead" style={{ left: playheadLeftPx }} />

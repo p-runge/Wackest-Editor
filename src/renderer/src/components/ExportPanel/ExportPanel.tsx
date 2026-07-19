@@ -29,10 +29,20 @@ function ExportPanel(): React.JSX.Element | null {
   const runExport = useProjectStore((state) => state.runExport)
 
   if (!project) return null
-  if (project.edit.keptRanges.length === 0) {
+  if (project.timelineDurationSec === 0) {
     return (
       <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
         Zuerst synchronisieren, damit Bereiche zum Exportieren entstehen.
+      </p>
+    )
+  }
+  // Distinct from "never synced": the timeline exists but the Schnitt Tool has cut every
+  // highlight out of it, so there's currently nothing left to render.
+  if (project.edit.keptRanges.length === 0) {
+    return (
+      <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        Alle Bereiche wurden herausgeschnitten — im Schnitt Tool mindestens einen Abschnitt
+        wiederherstellen, um exportieren zu können.
       </p>
     )
   }

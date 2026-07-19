@@ -3,6 +3,7 @@ import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import { SKIP_STEP_SEC } from '../../hooks/useGlobalShortcuts'
 import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
+import { computeProgramEndSec } from '../../lib/timeline-edit'
 import { Button } from '../ui/button'
 
 function formatTime(sec: number): string {
@@ -15,15 +16,20 @@ function formatTime(sec: number): string {
 }
 
 function PreviewTransportControls(): React.JSX.Element {
-  const timelineDurationSec = useProjectStore((state) => state.project?.timelineDurationSec ?? 0)
+  // The program's duration is where the last placed chunk ends (0:00 when the timeline is empty)
+  // — NOT timelineDurationSec, which is the raw synced footage length; the two diverge as soon as
+  // chunks are cut, deleted, or moved.
+  const programEndSec = useProjectStore((state) =>
+    state.project ? computeProgramEndSec(state.project.edit.keptRanges) : 0
+  )
   const playheadSec = usePlaybackStore((state) => state.playheadSec)
   const isPlaying = usePlaybackStore((state) => state.isPlaying)
   const togglePlay = usePlaybackStore((state) => state.togglePlay)
   const seek = usePlaybackStore((state) => state.seek)
 
-  // Same spot natural playback-to-the-end already stops at (see PreviewPlayer's advancePastGap) —
-  // landing exactly on timelineDurationSec resolves no active source at all (blank preview).
-  const endSec = Math.max(0, timelineDurationSec - RESYNC_THRESHOLD_SEC)
+  // Same spot natural playback-to-the-end already stops at (see PreviewPlayer) — landing exactly
+  // on the program end resolves no active source at all (blank preview).
+  const endSec = Math.max(0, programEndSec - RESYNC_THRESHOLD_SEC)
   const atStart = playheadSec <= 0
   const atEnd = playheadSec >= endSec
 
@@ -79,7 +85,7 @@ function PreviewTransportControls(): React.JSX.Element {
         <ChevronsRight />
       </Button>
       <span className="ml-1 font-mono text-xs tabular-nums text-muted-foreground">
-        {formatTime(playheadSec)} / {formatTime(timelineDurationSec)}
+        {formatTime(playheadSec)} / {formatTime(programEndSec)}
       </span>
     </div>
   )

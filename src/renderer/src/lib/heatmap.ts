@@ -1,11 +1,11 @@
-import type { HeatmapPoint } from '@shared/types/project'
-
 /**
  * A bucket counts as a "peak" when the provider gave it a reason and its score is a local
  * maximum (not lower than either neighbor) — surfaces the buckets worth explaining to the user
  * without cluttering the heatmap with a marker on every single bucket.
  */
-export function findHeatmapPeakIndices(points: HeatmapPoint[]): Set<number> {
+export function findHeatmapPeakIndices(
+  points: Array<{ score: number; reason?: string }>
+): Set<number> {
   const peaks = new Set<number>()
   points.forEach((point, i) => {
     if (!point.reason) return

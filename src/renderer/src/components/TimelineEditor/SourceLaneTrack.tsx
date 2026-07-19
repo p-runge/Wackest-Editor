@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SourceClip, TrackInterval } from '@shared/types/project'
-import { sourceCoverageRange, type EffectiveTrackInterval } from '../../lib/timeline-edit'
+import { sourceCoverageRange, type LaneChunk } from '../../lib/timeline-edit'
 import WaveformCanvas from './WaveformCanvas'
 import { SOURCE_LANE_HEIGHT_PX } from './constants'
 
@@ -9,21 +9,30 @@ interface SourceLaneTrackProps {
   pixelsPerSecond: number
   trackWidthPx: number
   color: string
-  /** Full activeVideoIntervals / activeAudioIntervals array, gap-filled with synthetic intervals
-   *  (see `fillIntervalGaps`) so this lane shows exactly the sub-ranges where it is the active
-   *  source — including stretches only active via fallback — and can find its shared boundaries
-   *  with neighbors. Synthetic intervals aren't draggable, since there's no real interval behind
-   *  them yet. */
-  activeIntervals: EffectiveTrackInterval[]
+  /** Full activeVideoIntervals / activeAudioIntervals array (content time) — always fully covers
+   *  every instant with any footage (see `fillActiveIntervalGaps`, run at sync time), so this lane
+   *  shows exactly the sub-ranges where it is the active source and can find its shared boundaries
+   *  with neighbors without any separate fallback/gap-filling of its own. */
+  activeIntervals: TrackInterval[]
+  /** The kept-range chunks that define what this timeline currently shows: everything in this
+   *  lane (waveform, active tint, dimming) is rendered per chunk, clipped to the chunk's content
+   *  span and drawn at its placement position — so a moved chunk carries this lane's slice of
+   *  footage along with it, and cut-out content simply isn't drawn. */
+  chunks: LaneChunk[]
   /** All sources in this section (video or audio), so a dragged boundary's bounds can be looked
    *  up for whichever neighbor source actually owns each side of it. */
   sources: SourceClip[]
   /** Overall length of the active-video / active-audio track — the outer bound a dragged
    *  boundary can be pushed to, past however many neighboring segments it crosses. */
   timelineDurationSec: number
-  /** Sets this source active starting at the clicked timestamp within the waveform. */
-  onWaveformClick: (atSec: number) => void
-  /** Drags the shared boundary starting at `leftIntervalId`'s interval to `atSec`. */
+  /** Whether Kamerawechsler is the active tool — gates the boundary-drag handles between active
+   *  segments; waveform clicks stay live either way (the caller decides what a click does). */
+  interactive: boolean
+  /** Click on a waveform piece, in *placement* (program-timeline) seconds — the caller maps to
+   *  content time itself where needed (e.g. to set the active source there). */
+  onWaveformClick: (placementSec: number) => void
+  /** Drags the shared boundary starting at `leftIntervalId`'s interval to `atSec` (content time —
+   *  active intervals live in content time). */
   onMoveBoundary: (leftIntervalId: string, atSec: number) => void
 }
 
@@ -31,7 +40,11 @@ interface BoundaryDragState {
   leftIntervalId: string
   minSec: number
   maxSec: number
+  /** Current boundary position in content time. */
   atSec: number
+  /** placementSec - contentSec for the chunk the boundary lives in, so pointer x (placement) can
+   *  be translated to content and the handle drawn back at placement. */
+  chunkOffset: number
 }
 
 const WAVEFORM_BUCKETS_PER_SEC = 10 // must match main/services/ffmpeg.ts
@@ -59,8 +72,10 @@ function SourceLaneTrack({
   trackWidthPx,
   color,
   activeIntervals,
+  chunks,
   sources,
   timelineDurationSec,
+  interactive,
   onWaveformClick,
   onMoveBoundary
 }: SourceLaneTrackProps): React.JSX.Element {
@@ -89,7 +104,8 @@ function SourceLaneTrack({
   const startDrag = (
     e: React.PointerEvent<HTMLDivElement>,
     left: TrackInterval,
-    right: TrackInterval
+    right: TrackInterval,
+    chunk: LaneChunk
   ): void => {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -99,9 +115,16 @@ function SourceLaneTrack({
     const rightCoverage = rightSource && sourceCoverageRange(rightSource)
     setDrag({
       leftIntervalId: left.id,
-      minSec: Math.max(0, rightCoverage?.startSec ?? 0),
-      maxSec: Math.min(timelineDurationSec, leftCoverage?.endSec ?? timelineDurationSec),
-      atSec: left.endSec
+      // Bounded by the growing side's real footage AND the chunk the boundary lives in — dragging
+      // a boundary out of its own chunk would silently jump it into differently-placed content.
+      minSec: Math.max(0, rightCoverage?.startSec ?? 0, chunk.contentStartSec),
+      maxSec: Math.min(
+        timelineDurationSec,
+        leftCoverage?.endSec ?? timelineDurationSec,
+        chunk.contentEndSec
+      ),
+      atSec: left.endSec,
+      chunkOffset: chunk.placementStartSec - chunk.contentStartSec
     })
   }
 
@@ -110,7 +133,8 @@ function SourceLaneTrack({
     const track = e.currentTarget.closest('.source-lane__track')
     if (!track) return
     const rect = track.getBoundingClientRect()
-    const atSec = (e.clientX - rect.left) / pixelsPerSecond
+    const placementSec = (e.clientX - rect.left) / pixelsPerSecond
+    const atSec = placementSec - drag.chunkOffset
     setDrag({ ...drag, atSec: Math.min(Math.max(atSec, drag.minSec), drag.maxSec) })
   }
 
@@ -126,119 +150,143 @@ function SourceLaneTrack({
       className="source-lane__track"
       style={{ height: SOURCE_LANE_HEIGHT_PX, width: trackWidthPx }}
     >
-      {ownBlocks.map(({ iv, index }) => {
-        const leftNeighbor = sorted[index - 1]
-        const displayStart =
-          drag && leftNeighbor && drag.leftIntervalId === leftNeighbor.id ? drag.atSec : iv.startSec
-        const displayEnd = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
-        return (
-          <div
-            key={iv.id}
-            className="source-lane__active-range"
-            style={{
-              left: displayStart * pixelsPerSecond,
-              width: Math.max(1, (displayEnd - displayStart) * pixelsPerSecond),
-              backgroundColor: color
-            }}
-            title={
-              iv.synthetic
-                ? `Aktiv, automatisch (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`
-                : `Aktiv (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`
-            }
-          />
-        )
-      })}
+      {chunks.flatMap((chunk) => {
+        const offset = chunk.placementStartSec - chunk.contentStartSec
+        const clipToChunk = (a: number, b: number): [number, number] | null => {
+          const start = Math.max(a, chunk.contentStartSec)
+          const end = Math.min(b, chunk.contentEndSec)
+          return end > start ? [start, end] : null
+        }
 
-      {ownBlocks.flatMap(({ iv, index }) => {
-        const handles: React.JSX.Element[] = []
-        if (iv.synthetic) return handles // no real interval behind it yet — nothing to drag
-        const leftNeighbor = sorted[index - 1]
-        if (leftNeighbor && !leftNeighbor.synthetic && leftNeighbor.endSec === iv.startSec) {
-          const boundarySec =
-            drag && drag.leftIntervalId === leftNeighbor.id ? drag.atSec : iv.startSec
-          handles.push(
+        const pieces: React.JSX.Element[] = []
+
+        // Active-source tint — content intervals clipped to this chunk, drawn at placement.
+        // While a boundary drag is live, the dragged edge follows drag.atSec (content time).
+        for (const { iv, index } of ownBlocks) {
+          const leftNeighbor = sorted[index - 1]
+          const rawStart =
+            drag && leftNeighbor && drag.leftIntervalId === leftNeighbor.id
+              ? drag.atSec
+              : iv.startSec
+          const rawEnd = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
+          const clipped = clipToChunk(rawStart, rawEnd)
+          if (!clipped) continue
+          pieces.push(
             <div
-              key={`boundary-left-${iv.id}`}
-              className="group absolute top-0 z-10 -ml-1.5 h-full w-3 cursor-col-resize"
-              style={{ left: boundarySec * pixelsPerSecond }}
-              onPointerDown={(e) => startDrag(e, leftNeighbor, iv)}
-              onPointerMove={updateDrag}
-              onPointerUp={endDrag}
+              key={`tint-${chunk.id}-${iv.id}`}
+              className="source-lane__active-range"
+              style={{
+                left: (clipped[0] + offset) * pixelsPerSecond,
+                width: Math.max(1, (clipped[1] - clipped[0]) * pixelsPerSecond),
+                backgroundColor: color
+              }}
+              title={`Aktiv (${(clipped[0] + offset).toFixed(1)}s–${(clipped[1] + offset).toFixed(1)}s)`}
+            />
+          )
+        }
+
+        // Waveform: this source's sync segments clipped to the chunk's content span, drawn at
+        // the chunk's placement — the footage inside a moved chunk travels with it.
+        for (const segment of source.syncSegments) {
+          const clipped = clipToChunk(
+            segment.localStartSec + segment.offsetSec,
+            segment.localEndSec + segment.offsetSec
+          )
+          if (!clipped) continue
+          const [c0, c1] = clipped
+          const local0 = c0 - segment.offsetSec
+          const local1 = c1 - segment.offsetSec
+          const segmentPeaks = peaks
+            ? peaks.slice(
+                Math.floor(local0 * WAVEFORM_BUCKETS_PER_SEC),
+                Math.ceil(local1 * WAVEFORM_BUCKETS_PER_SEC)
+              )
+            : []
+          const width = Math.max(1, (c1 - c0) * pixelsPerSecond)
+          pieces.push(
+            <div
+              key={`wave-${chunk.id}-${segment.id}`}
+              className="source-lane__segment"
+              style={{ left: (c0 + offset) * pixelsPerSecond, width, borderColor: color }}
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const withinSec = (e.clientX - rect.left) / pixelsPerSecond
+                onWaveformClick(c0 + offset + withinSec)
+              }}
             >
-              <div className="mx-auto h-full w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-foreground/70" />
+              {segmentPeaks.length > 0 && (
+                <WaveformCanvas
+                  peaks={segmentPeaks}
+                  width={width}
+                  height={SOURCE_LANE_HEIGHT_PX}
+                  color={color}
+                />
+              )}
             </div>
           )
         }
-        const rightNeighbor = sorted[index + 1]
-        if (rightNeighbor && !rightNeighbor.synthetic && rightNeighbor.startSec === iv.endSec) {
-          const boundarySec = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
-          handles.push(
-            <div
-              key={`boundary-right-${iv.id}`}
-              className="group absolute top-0 z-10 -ml-1.5 h-full w-3 cursor-col-resize"
-              style={{ left: boundarySec * pixelsPerSecond }}
-              onPointerDown={(e) => startDrag(e, iv, rightNeighbor)}
-              onPointerMove={updateDrag}
-              onPointerUp={endDrag}
-            >
-              <div className="mx-auto h-full w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-foreground/70" />
-            </div>
+
+        // Dim the stretches (within this chunk) where this source is NOT the active one.
+        for (const segment of source.syncSegments) {
+          const clipped = clipToChunk(
+            segment.localStartSec + segment.offsetSec,
+            segment.localEndSec + segment.offsetSec
           )
-        }
-        return handles
-      })}
-
-      {source.syncSegments.map((segment) => {
-        const left = (segment.localStartSec + segment.offsetSec) * pixelsPerSecond
-        const width = Math.max(1, (segment.localEndSec - segment.localStartSec) * pixelsPerSecond)
-        const segmentPeaks = peaks
-          ? peaks.slice(
-              Math.floor(segment.localStartSec * WAVEFORM_BUCKETS_PER_SEC),
-              Math.ceil(segment.localEndSec * WAVEFORM_BUCKETS_PER_SEC)
-            )
-          : []
-
-        return (
-          <div
-            key={segment.id}
-            className="source-lane__segment"
-            style={{ left, width, borderColor: color }}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect()
-              const localOffsetSec = (e.clientX - rect.left) / pixelsPerSecond
-              onWaveformClick(segment.localStartSec + segment.offsetSec + localOffsetSec)
-            }}
-          >
-            {segmentPeaks.length > 0 && (
-              <WaveformCanvas
-                peaks={segmentPeaks}
-                width={width}
-                height={SOURCE_LANE_HEIGHT_PX}
-                color={color}
+          if (!clipped) continue
+          const activeRanges: Array<[number, number]> = ownBlocks.map(({ iv }) => [
+            iv.startSec,
+            iv.endSec
+          ])
+          for (const [rangeStart, rangeEnd] of subtractRanges(clipped, activeRanges)) {
+            pieces.push(
+              <div
+                key={`dim-${chunk.id}-${segment.id}-${rangeStart}`}
+                className="source-lane__inactive-range"
+                style={{
+                  left: (rangeStart + offset) * pixelsPerSecond,
+                  width: Math.max(1, (rangeEnd - rangeStart) * pixelsPerSecond)
+                }}
               />
-            )}
-          </div>
-        )
-      })}
+            )
+          }
+        }
 
-      {source.syncSegments.flatMap((segment) => {
-        const segStart = segment.localStartSec + segment.offsetSec
-        const segEnd = segment.localEndSec + segment.offsetSec
-        const activeRanges: Array<[number, number]> = ownBlocks.map(({ iv }) => [
-          iv.startSec,
-          iv.endSec
-        ])
-        const inactiveRanges = subtractRanges([segStart, segEnd], activeRanges)
-        return inactiveRanges.map(([rangeStart, rangeEnd]) => (
-          <div
-            key={`${segment.id}-inactive-${rangeStart}`}
-            className="source-lane__inactive-range"
-            style={{
-              left: rangeStart * pixelsPerSecond,
-              width: Math.max(1, (rangeEnd - rangeStart) * pixelsPerSecond)
-            }}
-          />
-        ))
+        // Boundary-drag handles between two adjacent active intervals, at the boundary's current
+        // placement within this chunk. Keyed by the left interval's id so a boundary two
+        // own-blocks share (each seeing it as its neighbor's edge) is only rendered once.
+        if (interactive) {
+          const boundaryPairs = new Map<string, [TrackInterval, TrackInterval]>()
+          for (const { iv, index } of ownBlocks) {
+            const leftNeighbor = sorted[index - 1]
+            if (leftNeighbor && leftNeighbor.endSec === iv.startSec) {
+              boundaryPairs.set(leftNeighbor.id, [leftNeighbor, iv])
+            }
+            const rightNeighbor = sorted[index + 1]
+            if (rightNeighbor && rightNeighbor.startSec === iv.endSec) {
+              boundaryPairs.set(iv.id, [iv, rightNeighbor])
+            }
+          }
+          for (const [left, right] of boundaryPairs.values()) {
+            const boundarySec = drag && drag.leftIntervalId === left.id ? drag.atSec : left.endSec
+            if (boundarySec < chunk.contentStartSec || boundarySec >= chunk.contentEndSec) {
+              continue
+            }
+            pieces.push(
+              <div
+                key={`handle-${chunk.id}-${left.id}`}
+                className="group absolute top-0 z-10 -ml-1.5 h-full w-3 cursor-col-resize"
+                style={{ left: (boundarySec + offset) * pixelsPerSecond }}
+                onPointerDown={(e) => startDrag(e, left, right, chunk)}
+                onPointerMove={updateDrag}
+                onPointerUp={endDrag}
+              >
+                <div className="mx-auto h-full w-0.5 rounded-full bg-transparent transition-colors group-hover:bg-foreground/70" />
+              </div>
+            )
+          }
+        }
+
+        return pieces
       })}
     </div>
   )

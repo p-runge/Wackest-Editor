@@ -1,9 +1,20 @@
-import type { TrackInterval, SourceClip } from './project'
+import { v4 as uuidv4 } from 'uuid'
+import type { TrackInterval, SourceClip, KeptRange } from './project'
 
 export interface AudioCoverageSegment {
   sourceId: string
   unifiedStartSec: number
   unifiedEndSec: number
+}
+
+/** The [start, end) of raw/synced footage a kept range's content actually comes from — equal to
+ *  its own placement span unless it's been moved (Schnitt mode's free drag-to-reposition), in
+ *  which case the content stays anchored to wherever it was originally picked up from. Shared
+ *  between the renderer (drawing the relocated clip's own waveform at its new placement) and the
+ *  main-process exporter (which must trim/resolve sources from the content span, not placement). */
+export function keptRangeContentSpan(range: KeptRange): { startSec: number; endSec: number } {
+  const startSec = range.contentStartSec ?? range.startSec
+  return { startSec, endSec: startSec + (range.endSec - range.startSec) }
 }
 
 /** Finds which interval (if any) covers a given time. */
@@ -62,79 +73,91 @@ export function mapLocalTimeToUnified(source: SourceClip, localTimeSec: number):
 }
 
 /**
- * Resolves which video source is active at a given unified time: an explicit interval wins as
- * long as the source it names actually has footage there; an explicit switch can outlive the
- * footage it was set against (e.g. the assigned camera's recording ends before the next switch or
- * the timeline end), in which case falling through to the automatic fallback — which must pick a
- * source that actually has footage there — beats freezing on a source with nothing to show.
- * "Just the first video source in import order" can easily point at a source whose recording
- * hadn't started yet at that point in the unified timeline, hence the coverage check there too.
+ * What's active RIGHT NOW at a given time — a plain interval lookup, nothing more. This is the
+ * single source of truth every consumer (preview, camera switcher, lane display, export) shares:
+ * as long as `fillActiveIntervalGaps` has done its job at sync time, every instant with any
+ * footage has a real interval here, so there is no separate "fallback" case to get out of sync.
  */
 export function resolveVideoSourceId(
   activeVideoIntervals: TrackInterval[],
-  sources: SourceClip[],
   atSec: number
 ): string | undefined {
-  const explicit = resolveIntervalAt(activeVideoIntervals, atSec)?.value
-  if (explicit) {
-    const explicitSource = sources.find((s) => s.id === explicit)
-    if (explicitSource && mapUnifiedTimeToLocal(explicitSource, atSec) !== null) return explicit
-  }
+  return resolveIntervalAt(activeVideoIntervals, atSec)?.value
+}
+
+/** Same idea for active audio — see `resolveVideoSourceId`. */
+export function resolveAudioSourceId(
+  activeAudioIntervals: TrackInterval[],
+  atSec: number
+): string | undefined {
+  return resolveIntervalAt(activeAudioIntervals, atSec)?.value
+}
+
+/** The *default* video source for a not-yet-explicitly-set instant — used only by
+ *  `fillActiveIntervalGaps` at sync time, never as a runtime fallback. Picks the first source (in
+ *  array/import order) whose footage actually covers `atSec`. */
+export function defaultVideoSourceAt(sources: SourceClip[], atSec: number): string | undefined {
   return sources.find((s) => s.probed.hasVideo && mapUnifiedTimeToLocal(s, atSec) !== null)?.id
 }
 
-/**
- * Same idea for active audio: an explicit interval wins while its source actually covers this
- * time; otherwise prefer the resolved video source's own audio if it actually covers this time,
- * else fall back to any audio-bearing source that does.
- */
-export function resolveAudioSourceId(
-  activeAudioIntervals: TrackInterval[],
+/** The *default* audio source for a not-yet-explicitly-set instant: prefers `defaultVideoSourceId`
+ *  's own audio if it covers `atSec`, else the first audio-bearing source that does. Also used
+ *  only by `fillActiveIntervalGaps`. */
+export function defaultAudioSourceAt(
   sources: SourceClip[],
   atSec: number,
-  fallbackVideoSourceId: string | undefined
+  defaultVideoSourceId: string | undefined
 ): string | undefined {
-  const explicit = resolveIntervalAt(activeAudioIntervals, atSec)?.value
-  if (explicit) {
-    const explicitSource = sources.find((s) => s.id === explicit)
-    if (explicitSource && mapUnifiedTimeToLocal(explicitSource, atSec) !== null) return explicit
-  }
-
-  const videoSource = sources.find((s) => s.id === fallbackVideoSourceId)
+  const videoSource = sources.find((s) => s.id === defaultVideoSourceId)
   if (videoSource?.probed.hasAudio && mapUnifiedTimeToLocal(videoSource, atSec) !== null) {
-    return fallbackVideoSourceId
+    return defaultVideoSourceId
   }
-
   return sources.find((s) => s.probed.hasAudio && mapUnifiedTimeToLocal(s, atSec) !== null)?.id
 }
 
-export interface EffectiveTrackInterval extends TrackInterval {
-  /** True for an interval synthesized to fill a stretch left uncovered by any explicit interval
-   *  (e.g. before the first-ever camera switch, or after the timeline grew past the last one via a
-   *  later re-sync) — not a real, draggable/editable interval, just what fallback resolution would
-   *  pick there anyway. */
-  synthetic?: boolean
-}
-
 /**
- * Fills every stretch of [0, timelineDurationSec) left uncovered by an explicit interval with a
- * synthetic one for whichever source `resolveAt` actually resolves there — so a track-lane display
- * built from `intervals` alone doesn't miss the leading/trailing regions that are only active via
- * fallback (see resolveVideoSourceId/resolveAudioSourceId), which would otherwise silently disagree
- * with the preview/export (both of which already apply that same fallback). Each gap is further
- * split at every source's own footage boundary within it, since the fallback-resolved source can
- * itself change partway through a gap — same reasoning as `resolveActiveAudioCoverage` below.
+ * Materializes full coverage for an active-track (video or audio) interval list: every existing
+ * interval is trimmed to where its named source actually has footage — dropped entirely if that
+ * source no longer exists at all (e.g. was just removed) — then every remaining gap, wherever ANY
+ * source has footage, is filled with a real interval for whichever source `resolveDefault` picks
+ * there. The result always fully covers every instant that has footage, so `resolveVideoSourceId`/
+ * `resolveAudioSourceId` never need a runtime fallback: what's "set" and what's "shown" are always
+ * the same interval list — the class of bug where the lane, the preview, and the export silently
+ * disagreed about what's active can't recur.
+ *
+ * Called once whenever the source list or their sync alignment changes — sync, re-sync, a manual
+ * offset edit, or removing a source — not on every render/lookup, so the default choice is decided
+ * once and written into real state instead of being independently re-derived by each consumer.
+ *
+ * `extraBoundarySecs` splits gap-fills at additional points beyond source footage boundaries —
+ * the audio track passes the (already-filled) video intervals' edges here, since the audio default
+ * ("prefer the active video source's own audio") flips exactly at video switches. Same reasoning
+ * as `resolveActiveAudioCoverage` below.
  */
-export function fillIntervalGaps(
+export function fillActiveIntervalGaps(
   intervals: TrackInterval[],
   sources: SourceClip[],
   timelineDurationSec: number,
-  resolveAt: (atSec: number) => string | undefined
-): EffectiveTrackInterval[] {
-  if (timelineDurationSec <= 0) return intervals
+  resolveDefault: (atSec: number) => string | undefined,
+  extraBoundarySecs: number[] = []
+): TrackInterval[] {
+  if (timelineDurationSec <= 0) return []
 
   const sorted = [...intervals].sort((a, b) => a.startSec - b.startSec)
-  const result: EffectiveTrackInterval[] = []
+  const trimmed: TrackInterval[] = []
+  for (const iv of sorted) {
+    const source = sources.find((s) => s.id === iv.value)
+    const coverage = source ? sourceCoverageRange(source) : null
+    if (!coverage) continue // source gone (or never synced) — nothing real to keep here
+    const startSec = Math.max(iv.startSec, coverage.startSec)
+    const endSec = Math.min(iv.endSec, coverage.endSec)
+    if (endSec <= startSec) continue // entirely outside its source's footage
+    trimmed.push(
+      startSec === iv.startSec && endSec === iv.endSec ? iv : { ...iv, startSec, endSec }
+    )
+  }
+
+  const result: TrackInterval[] = []
   let cursor = 0
 
   const fillGap = (gapEnd: number): void => {
@@ -147,36 +170,42 @@ export function fillIntervalGaps(
         boundaries.add(coverage.startSec)
       if (coverage.endSec > cursor && coverage.endSec < gapEnd) boundaries.add(coverage.endSec)
     }
+    for (const boundarySec of extraBoundarySecs) {
+      if (boundarySec > cursor && boundarySec < gapEnd) boundaries.add(boundarySec)
+    }
     const points = [cursor, ...Array.from(boundaries).sort((a, b) => a - b), gapEnd]
     for (let i = 0; i < points.length - 1; i++) {
       const segStart = points[i]
       const segEnd = points[i + 1]
       if (segEnd <= segStart) continue
-      const value = resolveAt(segStart)
-      if (!value) continue
+      const value = resolveDefault(segStart)
+      if (!value) continue // genuinely nothing covers this instant (e.g. a hard-cut gap)
 
-      // Merge with the previous synthetic segment if it resolved to the same source — boundary
+      // Merge with the previous filled-in segment if it resolved to the same source — boundary
       // points can land a hair apart from floating-point sums (e.g. offsetSec + localEndSec) that
       // don't exactly match `gapEnd`/`timelineDurationSec`, which would otherwise leave a sliver
       // duplicate of the same source instead of one continuous block.
       const previous = result[result.length - 1]
-      if (previous?.synthetic && previous.value === value && previous.endSec === segStart) {
+      if (previous && previous.value === value && previous.endSec === segStart) {
         previous.endSec = segEnd
       } else {
-        result.push({
-          id: `gap-${segStart}`,
-          startSec: segStart,
-          endSec: segEnd,
-          value,
-          synthetic: true
-        })
+        result.push({ id: uuidv4(), startSec: segStart, endSec: segEnd, value })
       }
     }
   }
 
-  for (const iv of sorted) {
+  for (const iv of trimmed) {
     fillGap(iv.startSec)
-    result.push(iv)
+    // Same adjacent-merge as inside fillGap, but against whatever's already last in `result` —
+    // a filled-in gap ending exactly where this real interval starts, same source, shouldn't stay
+    // two separate objects. Always builds a fresh object rather than mutating `iv` or `previous`,
+    // since either could be a reference the caller (or an earlier trim) still holds onto.
+    const previous = result[result.length - 1]
+    if (previous && previous.value === iv.value && previous.endSec === iv.startSec) {
+      result[result.length - 1] = { ...previous, endSec: iv.endSec }
+    } else {
+      result.push(iv)
+    }
     cursor = Math.max(cursor, iv.endSec)
   }
   fillGap(timelineDurationSec)
@@ -223,8 +252,7 @@ export function resolveActiveAudioCoverage(
     if (unifiedEndSec <= unifiedStartSec) continue
 
     const midpoint = (unifiedStartSec + unifiedEndSec) / 2
-    const videoSourceId = resolveVideoSourceId(activeVideoIntervals, sources, midpoint)
-    const sourceId = resolveAudioSourceId(activeAudioIntervals, sources, midpoint, videoSourceId)
+    const sourceId = resolveAudioSourceId(activeAudioIntervals, midpoint)
     if (!sourceId) continue
 
     const previous = segments[segments.length - 1]

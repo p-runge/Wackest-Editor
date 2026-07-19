@@ -13,17 +13,8 @@ export function useResolvedSources(
 ): { activeVideoId?: string; activeAudioId?: string } {
   return useMemo(() => {
     if (!project) return {}
-    const activeVideoId = resolveVideoSourceId(
-      project.edit.activeVideoIntervals,
-      project.sources,
-      playheadSec
-    )
-    const activeAudioId = resolveAudioSourceId(
-      project.edit.activeAudioIntervals,
-      project.sources,
-      playheadSec,
-      activeVideoId
-    )
+    const activeVideoId = resolveVideoSourceId(project.edit.activeVideoIntervals, playheadSec)
+    const activeAudioId = resolveAudioSourceId(project.edit.activeAudioIntervals, playheadSec)
     return { activeVideoId, activeAudioId }
   }, [project, playheadSec])
 }
