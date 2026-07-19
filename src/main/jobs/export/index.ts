@@ -1,13 +1,18 @@
 import { mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { buildExportSegments } from './edl'
-import { renderExportSegment, concatSegments } from '../../services/ffmpeg'
+import { buildExportSegments, groupAudioSpans } from './edl'
+import {
+  renderExportVideoSegment,
+  renderExportAudioSegment,
+  muxVideoAudio,
+  concatSegments
+} from '../../services/ffmpeg'
 import { mapUnifiedTimeToLocal } from '@shared/types/timeline-time'
 import type { Project, SourceClip } from '@shared/types/project'
 
 export interface ExportProgressUpdate {
-  stage: 'rendering' | 'concatenating' | 'done'
+  stage: 'rendering-video' | 'rendering-audio' | 'concatenating' | 'muxing' | 'done'
   segmentIndex?: number
   segmentCount?: number
   progress: number
@@ -43,49 +48,91 @@ export async function runExportForProject(
     )
   }
 
+  const audioSpans = groupAudioSpans(segments)
   const { width, height } = resolveTargetResolution(project.sources)
   const workDir = await mkdtemp(join(tmpdir(), 'wackest-export-'))
 
-  try {
-    const segmentPaths: string[] = []
+  // Video is re-encoded per camera cut; audio is re-encoded only per continuous active-audio span
+  // (see `groupAudioSpans`) and muxed back in at the end — re-encoding audio per video cut instead
+  // would reintroduce an audible click at every cut, even when the audio source didn't change.
+  const VIDEO_PHASE_END = 0.55
+  const AUDIO_PHASE_END = 0.8
+  const CONCAT_PHASE_END = 0.9
 
+  try {
+    const videoSegmentPaths: string[] = []
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i]
       const videoSource = project.sources.find((s) => s.id === segment.videoSourceId)
-      const audioSource = project.sources.find((s) => s.id === segment.audioSourceId)
-      if (!videoSource || !audioSource) continue
+      if (!videoSource) continue
 
       const videoInSec = mapUnifiedTimeToLocal(videoSource, segment.unifiedStartSec)
-      const audioInSec = mapUnifiedTimeToLocal(audioSource, segment.unifiedStartSec)
-      if (videoInSec === null || audioInSec === null) {
+      if (videoInSec === null) {
         throw new Error(
           `Zeitpunkt ${segment.unifiedStartSec.toFixed(1)}s liegt außerhalb der Sync-Segmente einer Quelle — bitte Sync prüfen.`
         )
       }
 
-      const segmentPath = join(workDir, `segment-${String(i).padStart(4, '0')}.mp4`)
-      await renderExportSegment({
+      const segmentPath = join(workDir, `video-${String(i).padStart(4, '0')}.mp4`)
+      await renderExportVideoSegment({
         videoFilePath: videoSource.originalFilePath,
         videoInSec,
-        audioFilePath: audioSource.originalFilePath,
-        audioInSec,
         durationSec: segment.unifiedEndSec - segment.unifiedStartSec,
         targetWidth: width,
         targetHeight: height,
         outputPath: segmentPath,
         onProgress: (fraction) =>
           onProgress?.({
-            stage: 'rendering',
+            stage: 'rendering-video',
             segmentIndex: i,
             segmentCount: segments.length,
-            progress: (i + fraction) / segments.length
+            progress: ((i + fraction) / segments.length) * VIDEO_PHASE_END
           })
       })
-      segmentPaths.push(segmentPath)
+      videoSegmentPaths.push(segmentPath)
     }
 
-    onProgress?.({ stage: 'concatenating', progress: 0.95 })
-    await concatSegments(segmentPaths, outputPath, workDir)
+    const audioSpanPaths: string[] = []
+    for (let i = 0; i < audioSpans.length; i++) {
+      const span = audioSpans[i]
+      const audioSource = project.sources.find((s) => s.id === span.audioSourceId)
+      if (!audioSource) continue
+
+      const audioInSec = mapUnifiedTimeToLocal(audioSource, span.unifiedStartSec)
+      if (audioInSec === null) {
+        throw new Error(
+          `Zeitpunkt ${span.unifiedStartSec.toFixed(1)}s liegt außerhalb der Sync-Segmente einer Quelle — bitte Sync prüfen.`
+        )
+      }
+
+      const spanPath = join(workDir, `audio-${String(i).padStart(4, '0')}.m4a`)
+      await renderExportAudioSegment({
+        audioFilePath: audioSource.originalFilePath,
+        audioInSec,
+        durationSec: span.unifiedEndSec - span.unifiedStartSec,
+        outputPath: spanPath,
+        onProgress: (fraction) =>
+          onProgress?.({
+            stage: 'rendering-audio',
+            segmentIndex: i,
+            segmentCount: audioSpans.length,
+            progress:
+              VIDEO_PHASE_END +
+              ((i + fraction) / audioSpans.length) * (AUDIO_PHASE_END - VIDEO_PHASE_END)
+          })
+      })
+      audioSpanPaths.push(spanPath)
+    }
+
+    onProgress?.({ stage: 'concatenating', progress: AUDIO_PHASE_END })
+    const concatVideoPath = join(workDir, 'video-concat.mp4')
+    const concatAudioPath = join(workDir, 'audio-concat.m4a')
+    await concatSegments(videoSegmentPaths, concatVideoPath, workDir)
+    await concatSegments(audioSpanPaths, concatAudioPath, workDir)
+    onProgress?.({ stage: 'concatenating', progress: CONCAT_PHASE_END })
+
+    onProgress?.({ stage: 'muxing', progress: CONCAT_PHASE_END })
+    await muxVideoAudio(concatVideoPath, concatAudioPath, outputPath)
     onProgress?.({ stage: 'done', progress: 1 })
   } finally {
     await rm(workDir, { recursive: true, force: true })

@@ -157,11 +157,9 @@ export function extractCompressedAudioChunks(filePath: string, outDir: string): 
   })
 }
 
-export interface RenderSegmentInput {
+export interface RenderVideoSegmentInput {
   videoFilePath: string
   videoInSec: number
-  audioFilePath: string
-  audioInSec: number
   durationSec: number
   targetWidth: number
   targetHeight: number
@@ -170,13 +168,16 @@ export interface RenderSegmentInput {
 }
 
 /**
- * Renders one export sub-segment: trims video and audio (which may come from different source
- * files/offsets) to the same duration, scales+letterboxes video to a consistent output resolution
- * (sources may differ in aspect ratio, e.g. a landscape camera mixed with a portrait phone clip),
- * and re-encodes. Re-encoding (rather than stream-copy) is required for frame-accurate trims
- * across differently-encoded sources — see export pipeline notes.
+ * Renders one export video sub-segment (no audio): trims to duration, scales+letterboxes to a
+ * consistent output resolution (sources may differ in aspect ratio, e.g. a landscape camera mixed
+ * with a portrait phone clip), and re-encodes. Re-encoding (rather than stream-copy) is required
+ * for frame-accurate trims across differently-encoded sources. Video is split at every camera cut;
+ * audio is rendered separately (see `renderExportAudioSegment`) and only split where the active
+ * audio source actually changes, then muxed back together at the end — re-encoding audio once per
+ * video cut instead would add an audible click at every cut from each independent encode's priming
+ * samples, even when the audio source and offset are continuous across that cut.
  */
-export function renderExportSegment(input: RenderSegmentInput): Promise<void> {
+export function renderExportVideoSegment(input: RenderVideoSegmentInput): Promise<void> {
   const scaleFilter =
     `scale=${input.targetWidth}:${input.targetHeight}:force_original_aspect_ratio=decrease,` +
     `pad=${input.targetWidth}:${input.targetHeight}:(ow-iw)/2:(oh-ih)/2:color=black`
@@ -185,13 +186,10 @@ export function renderExportSegment(input: RenderSegmentInput): Promise<void> {
     ffmpeg()
       .input(input.videoFilePath)
       .inputOptions(['-ss', String(input.videoInSec), '-t', String(input.durationSec)])
-      .input(input.audioFilePath)
-      .inputOptions(['-ss', String(input.audioInSec), '-t', String(input.durationSec)])
       .outputOptions([
         '-map',
         '0:v:0',
-        '-map',
-        '1:a:0',
+        '-an',
         '-vf',
         scaleFilter,
         '-c:v',
@@ -199,16 +197,7 @@ export function renderExportSegment(input: RenderSegmentInput): Promise<void> {
         '-preset',
         'veryfast',
         '-crf',
-        '20',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '192k',
-        '-ar',
-        '48000',
-        '-ac',
-        '2',
-        '-shortest'
+        '20'
       ])
       .on('progress', (progress) => {
         if (progress.percent != null) {
@@ -218,6 +207,60 @@ export function renderExportSegment(input: RenderSegmentInput): Promise<void> {
       .on('error', reject)
       .on('end', () => resolve())
       .save(input.outputPath)
+  })
+}
+
+export interface RenderAudioSegmentInput {
+  audioFilePath: string
+  audioInSec: number
+  durationSec: number
+  outputPath: string
+  onProgress?: (fractionDone: number) => void
+}
+
+/** Renders one continuous export audio span — see `renderExportVideoSegment` for why this is split independently of video cuts. */
+export function renderExportAudioSegment(input: RenderAudioSegmentInput): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(input.audioFilePath)
+      .inputOptions(['-ss', String(input.audioInSec), '-t', String(input.durationSec)])
+      .outputOptions([
+        '-map',
+        '0:a:0',
+        '-vn',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        '48000',
+        '-ac',
+        '2'
+      ])
+      .on('progress', (progress) => {
+        if (progress.percent != null) {
+          input.onProgress?.(Math.max(0, Math.min(1, progress.percent / 100)))
+        }
+      })
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(input.outputPath)
+  })
+}
+
+/** Muxes a (silent) concatenated video track and a concatenated audio track into one output file, no re-encode. */
+export function muxVideoAudio(
+  videoPath: string,
+  audioPath: string,
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(videoPath)
+      .input(audioPath)
+      .outputOptions(['-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-shortest'])
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(outputPath)
   })
 }
 

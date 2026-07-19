@@ -8,6 +8,12 @@ export interface ExportSegment {
   audioSourceId: string
 }
 
+export interface AudioExportSpan {
+  unifiedStartSec: number
+  unifiedEndSec: number
+  audioSourceId: string
+}
+
 /**
  * Splits each kept range at every active-video/active-audio boundary it contains, so every
  * resulting sub-segment has exactly one active video source and one active audio source —
@@ -57,4 +63,37 @@ export function buildExportSegments(
   }
 
   return segments
+}
+
+/**
+ * Collapses consecutive export segments that share the same active audio source into one span —
+ * a video-only cut (camera switch with the audio source held constant) does not need a new audio
+ * boundary. Segments are already contiguous within a kept range and separated by real gaps across
+ * kept ranges, so a plain adjacency + same-source check is sufficient. This is what lets export
+ * render each continuous audio stretch with a single ffmpeg encode instead of one per video cut —
+ * re-encoding AAC separately per video segment (even from the same, temporally continuous source)
+ * introduces an audible click at every join, since each independent encode adds its own encoder
+ * priming samples that a later stream-copy concat can't undo.
+ */
+export function groupAudioSpans(segments: ExportSegment[]): AudioExportSpan[] {
+  const spans: AudioExportSpan[] = []
+
+  for (const segment of segments) {
+    const previous = spans[spans.length - 1]
+    if (
+      previous &&
+      previous.audioSourceId === segment.audioSourceId &&
+      previous.unifiedEndSec === segment.unifiedStartSec
+    ) {
+      previous.unifiedEndSec = segment.unifiedEndSec
+    } else {
+      spans.push({
+        unifiedStartSec: segment.unifiedStartSec,
+        unifiedEndSec: segment.unifiedEndSec,
+        audioSourceId: segment.audioSourceId
+      })
+    }
+  }
+
+  return spans
 }

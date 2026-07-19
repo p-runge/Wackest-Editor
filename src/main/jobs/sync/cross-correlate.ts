@@ -115,10 +115,8 @@ export function crossCorrelate(
   }
   if (!Number.isFinite(secondBestNormalized)) secondBestNormalized = 0
 
-  const peakRatio =
-    secondBestNormalized > 1e-9 ? bestNormalized / secondBestNormalized : 10
-  const confidence =
-    clamp01(bestNormalized) * clamp01(Math.log10(1 + Math.max(0, peakRatio - 1)))
+  const peakRatio = secondBestNormalized > 1e-9 ? bestNormalized / secondBestNormalized : 10
+  const confidence = clamp01(bestNormalized) * clamp01(Math.log10(1 + Math.max(0, peakRatio - 1)))
 
   return { lagSamples: bestK, confidence }
 }

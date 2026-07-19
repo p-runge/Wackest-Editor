@@ -127,7 +127,7 @@ export interface ExportRunArgs {
 }
 
 export interface ExportProgressEvent {
-  stage: 'rendering' | 'concatenating' | 'done'
+  stage: 'rendering-video' | 'rendering-audio' | 'concatenating' | 'muxing' | 'done'
   segmentIndex?: number
   segmentCount?: number
   progress: number

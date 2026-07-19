@@ -5,10 +5,14 @@ import { Progress } from '../ui/progress'
 
 function stageLabel(stage: string): string {
   switch (stage) {
-    case 'rendering':
-      return 'Rendere Abschnitte'
+    case 'rendering-video':
+      return 'Rendere Video-Abschnitte'
+    case 'rendering-audio':
+      return 'Rendere Audio-Abschnitte'
     case 'concatenating':
       return 'Füge Abschnitte zusammen'
+    case 'muxing':
+      return 'Führe Video und Audio zusammen'
     case 'done':
       return 'Fertig'
     default:
