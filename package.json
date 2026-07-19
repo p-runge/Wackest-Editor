@@ -1,5 +1,5 @@
 {
-  "name": "wackest-tool",
+  "name": "wackest-editor",
   "version": "0.0.1",
   "description": "Multicam YouTube editing assistant: auto-sync, speech-to-text, highlight heatmap, manual multicam editor and export.",
   "main": "./out/main/index.js",

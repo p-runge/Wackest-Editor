@@ -26,7 +26,7 @@ export function registerProjectIpc(): void {
     const result = await dialog.showOpenDialog({
       title: 'Projekt öffnen',
       properties: ['openFile'],
-      filters: [{ name: 'Wackest Tool Projekt', extensions: ['json'] }]
+      filters: [{ name: 'Wackest Editor Projekt', extensions: ['json'] }]
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]

@@ -124,7 +124,7 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.progani.wackest-tool')
+  electronApp.setAppUserModelId('com.progani.wackest-editor')
 
   setApplicationMenu()
 

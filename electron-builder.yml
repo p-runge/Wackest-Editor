@@ -1,5 +1,5 @@
-appId: com.progani.wackest-tool
-productName: Wackest Tool
+appId: com.progani.wackest-editor
+productName: Wackest Editor
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - 'resources/**'
 win:
-  executableName: wackest-tool
+  executableName: wackest-editor
   target:
     - target: nsis
       arch:
