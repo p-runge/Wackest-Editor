@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Film, Mic, Pause, Play, Redo2, SwitchCamera, Undo2, Upload, ZoomIn } from 'lucide-react'
+import { Film, Mic, SwitchCamera, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import TimeRuler from './TimeRuler'
@@ -9,6 +9,7 @@ import LaneLabel from './LaneLabel'
 import SubtitleLaneTrack from './SubtitleLaneTrack'
 import HeatmapLaneTrack from './HeatmapLaneTrack'
 import PreviewPlayer from './PreviewPlayer'
+import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
 import { colorForSourceId } from '../../lib/colors'
 import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
@@ -27,15 +28,6 @@ import './timeline-editor.css'
 const PREVIEW_MIN_WIDTH_PX = 280
 const PREVIEW_MAX_WIDTH_PX = 960
 const PREVIEW_DEFAULT_WIDTH_PX = 480
-
-function formatTime(sec: number): string {
-  const total = Math.max(0, Math.round(sec))
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  const pad = (n: number): string => n.toString().padStart(2, '0')
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
-}
 
 /** Sticky section title in the sidebar — stays pinned below the ruler spacer for as long as its
  *  section's rows (wrapped alongside it in the same parent) are still in view. */
@@ -82,8 +74,6 @@ function TimelineEditor(): React.JSX.Element | null {
   const setZoom = usePlaybackStore((state) => state.setZoom)
   const playheadSec = usePlaybackStore((state) => state.playheadSec)
   const seek = usePlaybackStore((state) => state.seek)
-  const isPlaying = usePlaybackStore((state) => state.isPlaying)
-  const togglePlay = usePlaybackStore((state) => state.togglePlay)
 
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
 
@@ -242,32 +232,7 @@ function TimelineEditor(): React.JSX.Element | null {
           style={{ width: previewWidthPx, maxWidth: '100%' }}
         >
           <PreviewPlayer />
-          <div className="flex items-center gap-1 border-t border-border/60 bg-background/40 px-2 py-1.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={() => useProjectStore.temporal.getState().undo()}
-              title="Rückgängig"
-            >
-              <Undo2 />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              onClick={() => useProjectStore.temporal.getState().redo()}
-              title="Wiederholen"
-            >
-              <Redo2 />
-            </Button>
-            <Button variant="ghost" size="icon" className="size-7" onClick={togglePlay}>
-              {isPlaying ? <Pause /> : <Play />}
-            </Button>
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
-              {formatTime(playheadSec)}
-            </span>
-          </div>
+          <PreviewTransportControls />
         </div>
 
         <div

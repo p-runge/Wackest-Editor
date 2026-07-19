@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useProjectStore } from './state/project-store'
 import { useToolSidebarStore } from './state/tool-sidebar-store'
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import TopBar from './components/TopBar/TopBar'
 import StartScreen from './components/StartScreen/StartScreen'
 import ToolSidebar from './components/ToolSidebar/ToolSidebar'
@@ -11,6 +12,8 @@ function App(): React.JSX.Element {
   const importFromDrop = useProjectStore((state) => state.importFromDrop)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const dragCounter = useRef(0)
+
+  useGlobalShortcuts()
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
     e.preventDefault()

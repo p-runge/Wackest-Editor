@@ -23,7 +23,9 @@ export const IpcChannels = {
   exportShowInFolder: 'export:show-in-folder',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
-  settingsPickFile: 'settings:pick-file'
+  settingsPickFile: 'settings:pick-file',
+  menuUndo: 'menu:undo',
+  menuRedo: 'menu:redo'
 } as const
 
 export interface ProjectSaveArgs {

@@ -4,6 +4,7 @@ import type { Project, SourceClip } from '@shared/types/project'
 import { colorForSourceId } from '../../lib/colors'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
+import { isTypingTarget } from '../../lib/dom'
 
 interface CameraSwitcherProps {
   project: Project
@@ -12,12 +13,6 @@ interface CameraSwitcherProps {
   audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
-}
-
-function isTypingTarget(el: Element | null): boolean {
-  if (!el) return false
-  const tag = el.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
 }
 
 function Tile({

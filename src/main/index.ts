@@ -1,4 +1,5 @@
-import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, Menu } from 'electron'
+import type { MenuItemConstructorOptions } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -11,6 +12,7 @@ import { registerExportIpc } from './ipc/export'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerMediaProtocolHandler } from './services/media-protocol'
 import { MEDIA_URL_SCHEME } from '@shared/types/media-url'
+import { IpcChannels } from '@shared/types/ipc'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -18,6 +20,71 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
   }
 ])
+
+// On macOS, ⌘Z/⌘⇧Z are intercepted at the native Cocoa level (the standard undo:/redo: responder
+// actions) before a keydown DOM event ever reaches the renderer — with or without a menu role
+// for them. The only way to observe these keys in the renderer is to bind them as an explicit
+// application-menu accelerator and forward the action over IPC (see preload's `menu.onUndo`).
+function setApplicationMenu(): void {
+  const isMac = process.platform === 'darwin'
+
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? ([
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          }
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
+    {
+      label: 'Datei',
+      submenu: [isMac ? { role: 'close' } : { role: 'quit' }]
+    },
+    {
+      label: 'Bearbeiten',
+      submenu: [
+        {
+          label: 'Rückgängig',
+          accelerator: 'CmdOrCtrl+Z',
+          click: (): void => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannels.menuUndo)
+          }
+        },
+        {
+          label: 'Wiederholen',
+          accelerator: 'CmdOrCtrl+Shift+Z',
+          click: (): void => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannels.menuRedo)
+          }
+        },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'Fenster',
+      submenu: isMac
+        ? [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }]
+        : [{ role: 'minimize' }, { role: 'close' }]
+    }
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
 
 function createWindow(): void {
   // Create the browser window.
@@ -57,6 +124,8 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.progani.wackest-tool')
+
+  setApplicationMenu()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

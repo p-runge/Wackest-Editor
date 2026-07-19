@@ -1,13 +1,16 @@
-import { Clapperboard, FolderOpen, FolderPlus } from 'lucide-react'
+import { useStore } from 'zustand'
+import { Clapperboard, FolderOpen, FolderPlus, Redo2, Undo2 } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { Button } from '../ui/button'
 import { Separator } from '../ui/separator'
+import { modKeyLabel } from '../../lib/platform'
 import SettingsPanel from '../SettingsPanel/SettingsPanel'
 
 function TopBar(): React.JSX.Element {
   const projectName = useProjectStore((state) => state.project?.name)
   const newProject = useProjectStore((state) => state.newProject)
   const openProject = useProjectStore((state) => state.openProject)
+  const { undo, redo, pastStates, futureStates } = useStore(useProjectStore.temporal)
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
@@ -19,6 +22,29 @@ function TopBar(): React.JSX.Element {
         <>
           <Separator orientation="vertical" className="h-5" />
           <span className="truncate text-sm text-muted-foreground">{projectName}</span>
+          <Separator orientation="vertical" className="h-5" />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={pastStates.length === 0}
+              onClick={() => undo()}
+              title={`Rückgängig (${modKeyLabel}+Z)`}
+            >
+              <Undo2 />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={futureStates.length === 0}
+              onClick={() => redo()}
+              title={`Wiederholen (${modKeyLabel}+Umschalt+Z)`}
+            >
+              <Redo2 />
+            </Button>
+          </div>
         </>
       )}
 

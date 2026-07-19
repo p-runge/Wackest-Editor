@@ -3,11 +3,8 @@ import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import { mapUnifiedTimeToLocal, mapLocalTimeToUnified } from '../../lib/timeline-edit'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
+import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
 import { toMediaUrl } from '@shared/types/media-url'
-
-// Resync threshold: below this we trust the element's own playback clock (avoids seek jitter);
-// above it we treat the change as an explicit scrub and force a seek.
-const RESYNC_THRESHOLD_SEC = 0.3
 
 function PreviewPlayer(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
