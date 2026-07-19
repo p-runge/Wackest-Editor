@@ -1,10 +1,9 @@
 import { crossCorrelate, type CrossCorrelationResult } from './cross-correlate'
+import { MIN_TRUSTED_CONFIDENCE } from './constants'
 
 const WINDOW_MARGIN_SEC = 10 * 60 // ±10 min search window around an mtime-based expectation
 const CHUNK_SEC = 10 * 60 // fallback full-range scan chunk size
 const CHUNK_OVERLAP_SEC = 60
-// Calibrated loosely against a real lossy/gain-shifted test clip (true match ~0.03, unrelated ~0.00007).
-const MIN_TRUSTED_CONFIDENCE = 0.005
 
 export interface PairwiseSyncResult extends CrossCorrelationResult {
   offsetSec: number

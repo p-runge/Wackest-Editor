@@ -21,7 +21,7 @@ export const ProbedMediaInfoSchema = z.object({
 export type ProbedMediaInfo = z.infer<typeof ProbedMediaInfoSchema>
 
 // unifiedTime = localTime + offsetSec, valid only within [localStartSec, localEndSec) of the source file.
-export const SyncMethodSchema = z.enum(['cross-correlation', 'manual', 'timestamp-heuristic'])
+export const SyncMethodSchema = z.enum(['cross-correlation', 'manual', 'no-overlap-gap'])
 export type SyncMethod = z.infer<typeof SyncMethodSchema>
 
 export const SyncSegmentSchema = z.object({
@@ -46,9 +46,8 @@ export const SourceClipSchema = z.object({
   label: z.string(),
   probed: ProbedMediaInfoSchema,
   role: SourceRoleSchema.optional(),
-  // local-time positions of detected/marked discontinuities within this file (pause/resume, hard cuts)
-  hardCutMarkers: z.array(z.number()),
-  // ordered by localStartSec; a file with hard cuts is split into multiple independently-placed segments
+  // always exactly one segment per source; non-overlapping source clusters are placed sequentially
+  // with a fixed gap instead — see Project.hardCutMarkers and method: 'no-overlap-gap'
   syncSegments: z.array(SyncSegmentSchema),
   waveformCachePath: z.string().optional(),
   thumbnailCachePath: z.string().optional()
@@ -141,6 +140,9 @@ export const ProjectSchema = z.object({
   updatedAt: z.string(),
   sources: z.array(SourceClipSchema),
   timelineDurationSec: z.number(),
+  // unified-timeline seconds; each is the start of a fixed NO_OVERLAP_GAP_SEC-wide hard-cut gap
+  // between two source clusters with no trustworthy temporal overlap (see main/jobs/sync/graph.ts)
+  hardCutMarkers: z.array(z.number()),
   transcript: z.array(TranscriptSegmentSchema),
   heatmap: z.array(HeatmapPointSchema),
   edit: EditStateSchema,
@@ -158,6 +160,7 @@ export function createEmptyProject(name: string, id: string): Project {
     updatedAt: now,
     sources: [],
     timelineDurationSec: 0,
+    hardCutMarkers: [],
     transcript: [],
     heatmap: [],
     edit: { activeVideoIntervals: [], activeAudioIntervals: [], keptRanges: [] },

@@ -208,10 +208,14 @@ export const useProjectStore = create<ProjectState>()(
           set({ isSyncing: true, syncError: null, syncProgress: null })
           const unsubscribe = window.api.sync.onProgress((update) => set({ syncProgress: update }))
           try {
-            const updatedSources = await window.api.sync.run({ sources: project.sources })
+            const result = await window.api.sync.run({ sources: project.sources })
             set((state) => {
               if (!state.project) return state
-              const updated: Project = { ...state.project, sources: updatedSources }
+              const updated: Project = {
+                ...state.project,
+                sources: result.sources,
+                hardCutMarkers: result.hardCutMarkers
+              }
               updated.timelineDurationSec = recomputeTimelineDuration(updated)
               if (updated.edit.keptRanges.length === 0 && updated.timelineDurationSec > 0) {
                 updated.edit = {

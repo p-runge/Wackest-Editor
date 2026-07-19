@@ -23,6 +23,7 @@ import {
 import { Button } from '../ui/button'
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
 import type { SourceClip } from '@shared/types/project'
+import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 import './timeline-editor.css'
 
 const PREVIEW_MIN_WIDTH_PX = 280
@@ -385,6 +386,17 @@ function TimelineEditor(): React.JSX.Element | null {
               )}
 
               <div style={{ height: BOTTOM_SPACER_PX }} />
+              {project.hardCutMarkers.map((gapStartSec) => (
+                <div
+                  key={gapStartSec}
+                  className="timeline-hardcut-gap"
+                  style={{
+                    left: gapStartSec * pixelsPerSecond,
+                    width: NO_OVERLAP_GAP_SEC * pixelsPerSecond
+                  }}
+                  title="Hard Cut: keine zeitliche Überschneidung"
+                />
+              ))}
               <div className="timeline-playhead" style={{ left: playheadLeftPx }} />
             </div>
           </div>

@@ -254,12 +254,21 @@
   pointer-events: none;
 }
 
-.source-lane__hardcut {
+.timeline-hardcut-gap {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: var(--color-destructive);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(220, 38, 38, 0.18),
+    rgba(220, 38, 38, 0.18) 6px,
+    rgba(220, 38, 38, 0.32) 6px,
+    rgba(220, 38, 38, 0.32) 12px
+  );
+  border-left: 1px solid var(--color-destructive);
+  border-right: 1px solid var(--color-destructive);
+  pointer-events: none;
+  z-index: 4;
 }
 
 .subtitle-lane__block {

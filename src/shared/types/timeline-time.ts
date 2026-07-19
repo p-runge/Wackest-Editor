@@ -50,10 +50,9 @@ export function mapUnifiedTimeToLocal(source: SourceClip, unifiedTimeSec: number
 }
 
 /**
- * Forward mapping used to drive the playhead from a playing element's own currentTime.
- * Returns null when `localTimeSec` falls outside every sync segment — e.g. footage between two
- * segments of the same file after a hard cut — rather than guessing via an arbitrary segment,
- * since that footage isn't actually part of the edited timeline.
+ * Forward mapping used to drive the playhead from a playing element's own currentTime. Each
+ * source has exactly one sync segment, so this only returns null once playback has run past that
+ * segment's end (e.g. native "ended", or a raw file continuing past its usable footage).
  */
 export function mapLocalTimeToUnified(source: SourceClip, localTimeSec: number): number | null {
   const segment = source.syncSegments.find(

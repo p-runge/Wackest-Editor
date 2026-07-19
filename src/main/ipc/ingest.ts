@@ -71,7 +71,6 @@ export function registerIngestIpc(): void {
           importedAt: new Date().toISOString(),
           label: basename(filePath),
           probed,
-          hardCutMarkers: [],
           // Placeholder single segment at offset 0 until Phase 2's sync graph resolves real offsets.
           syncSegments: [
             {
@@ -80,7 +79,7 @@ export function registerIngestIpc(): void {
               localEndSec: probed.durationSec,
               offsetSec: 0,
               confidence: 0,
-              method: 'timestamp-heuristic'
+              method: 'no-overlap-gap'
             }
           ],
           waveformCachePath,

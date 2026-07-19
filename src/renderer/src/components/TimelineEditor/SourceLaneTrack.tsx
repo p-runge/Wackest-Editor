@@ -232,22 +232,6 @@ function SourceLaneTrack({
           />
         ))
       })}
-
-      {source.hardCutMarkers.map((markerLocalSec) => {
-        const containing = source.syncSegments.find(
-          (s) => markerLocalSec >= s.localStartSec && markerLocalSec <= s.localEndSec
-        )
-        if (!containing) return null
-        const left = (markerLocalSec + containing.offsetSec) * pixelsPerSecond
-        return (
-          <div
-            key={markerLocalSec}
-            className="source-lane__hardcut"
-            style={{ left }}
-            title="Hard-Cut erkannt"
-          />
-        )
-      })}
     </div>
   )
 }

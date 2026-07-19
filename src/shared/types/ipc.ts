@@ -64,7 +64,10 @@ export interface SyncRunArgs {
   sources: SourceClip[]
 }
 
-export type SyncRunResult = SourceClip[]
+export interface SyncRunResult {
+  sources: SourceClip[]
+  hardCutMarkers: number[]
+}
 
 export interface SyncProgressEvent {
   stage: 'extracting' | 'correlating' | 'done'

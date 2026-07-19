@@ -5,6 +5,7 @@ import { mapUnifiedTimeToLocal, mapLocalTimeToUnified } from '../../lib/timeline
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
 import { toMediaUrl } from '@shared/types/media-url'
+import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 
 function PreviewPlayer(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
@@ -62,21 +63,19 @@ function PreviewPlayer(): React.JSX.Element | null {
     if (isPlaying && project && playheadSec >= project.timelineDurationSec) pause()
   }, [isPlaying, playheadSec, project, pause])
 
-  // Called whenever the currently playing source's local time isn't covered by any of its own
-  // sync segments — either a gap between two segments of the same file (a hard cut: footage that
-  // was recorded but isn't part of the edit) or having played past the last segment entirely
-  // (native "ended", or a raw file that runs on past its last usable segment). Jumps straight to
-  // wherever this source's next usable footage is, so the active-source resolution above can pick
-  // up the correct source there — only truly pausing once we've reached the actual timeline end.
-  const advancePastGap = (localTimeSec: number): void => {
+  // Entering a hard-cut gap (no source has footage at this unified time) unmounts the <video>/
+  // <audio> elements, so nothing is left to drive `playheadSec` forward via "timeupdate" — without
+  // this, playback would silently freeze with isPlaying stuck true instead of visibly stopping.
+  useEffect(() => {
+    if (isPlaying && !videoSource && !audioSource) pause()
+  }, [isPlaying, videoSource, audioSource, pause])
+
+  // Called once the currently playing source has played past its own footage (native "ended", or
+  // a raw file that runs on past its usable segment). Jumps to wherever this source's footage
+  // ends on the unified timeline, so the active-source resolution above can pick up whatever plays
+  // next there (another source, or a hard-cut gap) — only truly pausing at the actual timeline end.
+  const advancePastGap = (): void => {
     if (!project || !videoSource) return
-    const next = videoSource.syncSegments
-      .filter((seg) => seg.localStartSec > localTimeSec)
-      .sort((a, b) => a.localStartSec - b.localStartSec)[0]
-    if (next) {
-      seek(next.localStartSec + next.offsetSec)
-      return
-    }
     const sourceEndUnifiedSec = videoSource.syncSegments.reduce(
       (max, seg) => Math.max(max, seg.localEndSec + seg.offsetSec),
       0
@@ -94,19 +93,24 @@ function PreviewPlayer(): React.JSX.Element | null {
     if (!video) return
     const unified = mapLocalTimeToUnified(videoSource, video.currentTime)
     if (unified !== null) seek(unified)
-    else advancePastGap(video.currentTime)
+    else advancePastGap()
   }
 
   const handleEnded = (): void => {
-    if (videoRef.current) advancePastGap(videoRef.current.currentTime)
+    if (videoRef.current) advancePastGap()
   }
 
   if (!project) return null
 
   if (!videoSource) {
+    const inHardCutGap = project.hardCutMarkers.some(
+      (gapStartSec) => playheadSec >= gapStartSec && playheadSec < gapStartSec + NO_OVERLAP_GAP_SEC
+    )
     return (
       <div className="preview-player preview-player--empty">
-        Keine aktive Kamera für diesen Zeitpunkt.
+        {inHardCutGap
+          ? 'Hard Cut: keine Aufnahme überschneidet sich an dieser Stelle.'
+          : 'Keine aktive Kamera für diesen Zeitpunkt.'}
       </div>
     )
   }

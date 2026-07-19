@@ -10,6 +10,9 @@ function confidenceBadge(
   method: string
 ): { text: string; variant: 'secondary' | 'success' | 'destructive' } {
   if (method === 'manual') return { text: 'manuell', variant: 'secondary' }
+  if (method === 'no-overlap-gap') {
+    return { text: 'kein Overlap – Lücke eingefügt', variant: 'destructive' }
+  }
   if (confidence >= 0.02) return { text: 'hoch', variant: 'success' }
   if (confidence >= 0.005) return { text: 'mittel', variant: 'secondary' }
   return { text: 'niedrig – bitte prüfen', variant: 'destructive' }
@@ -57,6 +60,13 @@ function SyncPanel(): React.JSX.Element | null {
         </p>
       )}
 
+      {project.hardCutMarkers.length > 0 && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+          Hard-Cuts (kein Overlap) bei:{' '}
+          {project.hardCutMarkers.map((t) => `${t.toFixed(1)}s`).join(', ')}
+        </div>
+      )}
+
       <ul className="flex flex-col gap-2">
         {project.sources.map((source) => (
           <li key={source.id} className="rounded-md border border-border bg-card px-3 py-2.5">
@@ -98,12 +108,6 @@ function SyncPanel(): React.JSX.Element | null {
                 )
               })}
             </div>
-            {source.hardCutMarkers.length > 0 && (
-              <div className="mt-1.5 text-xs text-warning">
-                Hard-Cuts erkannt bei:{' '}
-                {source.hardCutMarkers.map((t) => `${t.toFixed(1)}s`).join(', ')}
-              </div>
-            )}
           </li>
         ))}
       </ul>
