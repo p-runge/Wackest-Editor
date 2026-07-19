@@ -1,7 +1,7 @@
 import { readFile, writeFile, copyFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { basename, join } from 'path'
-import { ProjectSchema, recoverProject, type Project } from '@shared/types/project'
+import { ProjectSchema, recoverProject, SCHEMA_VERSION, type Project } from '@shared/types/project'
 
 export async function saveProject(projectDir: string, project: Project): Promise<void> {
   await mkdir(projectDir, { recursive: true })
@@ -18,10 +18,32 @@ export async function saveProject(projectDir: string, project: Project): Promise
 export type ProjectLoadOutcome =
   { status: 'ok'; project: Project } | { status: 'invalid'; issues: string[] }
 
+// Forward-migrates an older project.json shape to the current schema before validation, so old
+// projects open without the "invalid fields" recovery prompt. Each step is additive and idempotent.
+function migrateProjectData(parsed: unknown): unknown {
+  if (typeof parsed !== 'object' || parsed === null) return parsed
+  const data = parsed as Record<string, unknown>
+
+  // v1 -> v2: the single global `heatmap` was replaced by per-source `trackHeatmaps`. The old
+  // curve isn't per-source, so it's dropped — the heatmap is recomputed on the next run.
+  if (!('trackHeatmaps' in data)) {
+    delete data.heatmap
+    data.trackHeatmaps = []
+  }
+
+  // v2 -> v3: the hard-cut-gap concept was removed. Drop the stale markers; the baked-in cluster
+  // offsets stay until the next sync, which now concatenates non-overlapping clusters directly.
+  if ('hardCutMarkers' in data) {
+    delete data.hardCutMarkers
+  }
+
+  data.schemaVersion = SCHEMA_VERSION
+  return data
+}
+
 export async function readProjectFile(projectFilePath: string): Promise<ProjectLoadOutcome> {
   const raw = await readFile(projectFilePath, 'utf-8')
-  const parsed = JSON.parse(raw)
-  // Future schema migrations (parsed.schemaVersion -> current) would run here before validation.
+  const parsed = migrateProjectData(JSON.parse(raw))
   const result = ProjectSchema.safeParse(parsed)
   if (result.success) return { status: 'ok', project: result.data }
 

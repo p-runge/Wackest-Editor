@@ -14,7 +14,7 @@ import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
 import {
   insertActiveSwitch,
   moveIntervalBoundary,
-  initializeKeptRanges,
+  extendKeptRangesToDuration,
   resolveIntervalAt,
   resolveVideoSourceId,
   defaultVideoSourceAt,
@@ -25,6 +25,8 @@ import {
   deleteKeptRangeById,
   resolveMovePlacement
 } from '../lib/timeline-edit'
+import { computeAutoVideoIntervals } from '../lib/auto-switch'
+import { reconcileProject } from '../lib/reconcile'
 import { useSettingsStore } from './settings-store'
 
 /**
@@ -116,6 +118,7 @@ interface ProjectState {
   setSttLanguageHint: (languageHint: string) => Promise<void>
   runHeatmap: () => Promise<void>
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
+  generateAutoCut: (options: { minShotSec: number; audioFollowsVideo: boolean }) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
   moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
@@ -144,7 +147,9 @@ export const useProjectStore = create<ProjectState>()(
               sources: [...state.project.sources, ...newClips]
             }
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
-            return { project: updated }
+            // Adding footage can grow the timeline past stale out-of-bounds cut ranges; reconcile
+            // drops those (and any dead references) so a re-import can't leave a phantom gap.
+            return { project: reconcileProject(updated) }
           })
           await get().saveProject()
         } catch (err) {
@@ -206,7 +211,7 @@ export const useProjectStore = create<ProjectState>()(
             // Heals any project saved before full active-interval coverage was guaranteed (or
             // hand-edited into an incomplete state) — loading is the one place every project,
             // however old, passes through before anything else can read it.
-            const project = withFullActiveCoverage(result.project)
+            const project = withFullActiveCoverage(reconcileProject(result.project))
             set({ project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
             await recordRecentProject(result.projectDir, project.name)
@@ -231,7 +236,7 @@ export const useProjectStore = create<ProjectState>()(
               return
             }
             // See openProject's comment on withFullActiveCoverage.
-            const project = withFullActiveCoverage(result.project)
+            const project = withFullActiveCoverage(reconcileProject(result.project))
             set({ project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
             await recordRecentProject(result.projectDir, project.name)
@@ -261,7 +266,7 @@ export const useProjectStore = create<ProjectState>()(
               return
             }
             // See openProject's comment on withFullActiveCoverage.
-            const project = withFullActiveCoverage(result.project)
+            const project = withFullActiveCoverage(reconcileProject(result.project))
             set({
               project,
               projectDir: result.projectDir,
@@ -305,9 +310,10 @@ export const useProjectStore = create<ProjectState>()(
               sources: state.project.sources.filter((source) => source.id !== sourceId)
             }
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
-            // The removed source may have owned active-video/audio intervals — re-fill so the
-            // timeline never has a gap where footage still exists but nothing is active.
-            return { project: withFullActiveCoverage(updated) }
+            // Drop transcript/heatmap/cut state that referenced the removed source (and reset cuts
+            // if the whole footage set was swapped), then re-fill active coverage so the timeline
+            // never has a gap where footage still exists but nothing is active.
+            return { project: withFullActiveCoverage(reconcileProject(updated)) }
           })
           await get().saveProject()
           try {
@@ -329,15 +335,17 @@ export const useProjectStore = create<ProjectState>()(
               if (!state.project) return state
               const updated: Project = {
                 ...state.project,
-                sources: result.sources,
-                hardCutMarkers: result.hardCutMarkers
+                sources: result.sources
               }
               updated.timelineDurationSec = recomputeTimelineDuration(updated)
-              if (updated.edit.keptRanges.length === 0 && updated.timelineDurationSec > 0) {
-                updated.edit = {
-                  ...updated.edit,
-                  keptRanges: initializeKeptRanges(updated.timelineDurationSec)
-                }
+              // Initialize cuts on first sync, and — crucially for a later sync that appended a
+              // non-overlapping source — extend coverage so the new tail/track isn't left invisible.
+              updated.edit = {
+                ...updated.edit,
+                keptRanges: extendKeptRangesToDuration(
+                  updated.edit.keptRanges,
+                  updated.timelineDurationSec
+                )
               }
               // Every instant with any footage gets a real active-video/audio interval — a
               // (re-)sync is exactly when the source list or their alignment can have changed,
@@ -440,10 +448,10 @@ export const useProjectStore = create<ProjectState>()(
             set({ heatmapProgress: update.progress })
           )
           try {
-            const heatmap = await window.api.heatmap.run({ project, projectDir })
+            const trackHeatmaps = await window.api.heatmap.run({ project, projectDir })
             set((state) => {
               if (!state.project) return state
-              return { project: { ...state.project, heatmap } }
+              return { project: { ...state.project, trackHeatmaps } }
             })
             await get().saveProject()
           } catch (err) {
@@ -452,6 +460,32 @@ export const useProjectStore = create<ProjectState>()(
             unsubscribe()
             set({ isScoringHeatmap: false, heatmapProgress: null })
           }
+        },
+
+        generateAutoCut: async ({ minShotSec, audioFollowsVideo }) => {
+          const { project } = get()
+          if (!project || project.trackHeatmaps.length === 0) return
+
+          const rawIntervals = computeAutoVideoIntervals(project.trackHeatmaps, { minShotSec })
+          const activeVideoIntervals = rawIntervals.map((iv) => ({ id: uuidv4(), ...iv }))
+          // Optionally point the audio at the same source as each new video shot, then let
+          // withFullActiveCoverage materialize/trim both tracks to the full-coverage invariant.
+          const activeAudioIntervals = audioFollowsVideo
+            ? activeVideoIntervals
+                .filter((iv) => project.sources.find((s) => s.id === iv.value)?.probed.hasAudio)
+                .map((iv) => ({ ...iv, id: uuidv4() }))
+            : project.edit.activeAudioIntervals
+
+          set((state) => {
+            if (!state.project) return state
+            return {
+              project: withFullActiveCoverage({
+                ...state.project,
+                edit: { ...state.project.edit, activeVideoIntervals, activeAudioIntervals }
+              })
+            }
+          })
+          await get().saveProject()
         },
 
         setHeatmapProvider: async (provider) => {

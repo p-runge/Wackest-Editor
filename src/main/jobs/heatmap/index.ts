@@ -1,20 +1,29 @@
 import { createHash } from 'crypto'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import type { Project, HeatmapPoint } from '@shared/types/project'
+import type { Project, TrackHeatmap } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
 import { createHeatmapProvider } from '../../services/providers/heatmap'
-import { pickActiveAudioSource } from '../stt'
 
 export interface HeatmapProgressUpdate {
   progress: number
 }
 
-/** Keyed by provider + bucket size + full transcript content, so a re-run after edits recomputes. */
+/**
+ * Keyed by provider + bucket size + every video source's id/sync alignment + full transcript, so a
+ * re-run after a re-sync (which shifts the per-source unified buckets) or transcript edit recomputes.
+ */
 function computeCacheKey(project: Project, bucketSec: number): string {
   const hash = createHash('sha256')
   hash.update(project.providerConfig.heatmap.provider)
   hash.update(String(bucketSec))
+  for (const source of project.sources) {
+    if (!source.probed.hasVideo) continue
+    hash.update(source.id)
+    for (const seg of source.syncSegments) {
+      hash.update(`${seg.localStartSec}:${seg.localEndSec}:${seg.offsetSec}`)
+    }
+  }
   for (const segment of project.transcript) {
     hash.update(segment.id)
     hash.update(segment.text)
@@ -28,10 +37,10 @@ function cacheFilePath(projectDir: string, cacheKey: string): string {
   return join(projectDir, 'cache', `heatmap-${cacheKey}.json`)
 }
 
-async function readCache(projectDir: string, cacheKey: string): Promise<HeatmapPoint[] | null> {
+async function readCache(projectDir: string, cacheKey: string): Promise<TrackHeatmap[] | null> {
   try {
     const raw = await readFile(cacheFilePath(projectDir, cacheKey), 'utf-8')
-    return JSON.parse(raw) as HeatmapPoint[]
+    return JSON.parse(raw) as TrackHeatmap[]
   } catch {
     return null
   }
@@ -40,10 +49,10 @@ async function readCache(projectDir: string, cacheKey: string): Promise<HeatmapP
 async function writeCache(
   projectDir: string,
   cacheKey: string,
-  points: HeatmapPoint[]
+  trackHeatmaps: TrackHeatmap[]
 ): Promise<void> {
   await mkdir(join(projectDir, 'cache'), { recursive: true })
-  await writeFile(cacheFilePath(projectDir, cacheKey), JSON.stringify(points), 'utf-8')
+  await writeFile(cacheFilePath(projectDir, cacheKey), JSON.stringify(trackHeatmaps), 'utf-8')
 }
 
 export async function runHeatmapForProject(
@@ -52,9 +61,10 @@ export async function runHeatmapForProject(
   settings: AppSettings,
   bucketSec: number,
   onProgress?: (update: HeatmapProgressUpdate) => void
-): Promise<HeatmapPoint[]> {
-  if (project.transcript.length === 0) {
-    throw new Error('Kein Transkript vorhanden. Bitte zuerst transkribieren.')
+): Promise<TrackHeatmap[]> {
+  const videoSources = project.sources.filter((s) => s.probed.hasVideo)
+  if (videoSources.length === 0) {
+    throw new Error('Keine Videospuren vorhanden.')
   }
 
   const cacheKey = computeCacheKey(project, bucketSec)
@@ -66,18 +76,19 @@ export async function runHeatmapForProject(
 
   const provider = createHeatmapProvider(project.providerConfig.heatmap.provider, settings)
 
-  // the local heuristic needs actual audio; LLM providers only need the transcript text
-  const audioFilePath =
-    provider.id === 'heuristic-local' ? pickActiveAudioSource(project)?.originalFilePath : undefined
+  const sourceMediaPaths: Record<string, string> = {}
+  for (const source of videoSources) sourceMediaPaths[source.id] = source.originalFilePath
 
-  const points = await provider.score({
+  const trackHeatmaps = await provider.score({
+    videoSources,
     transcript: project.transcript,
     timelineDurationSec: project.timelineDurationSec,
     bucketSec,
-    audioFilePath,
+    sourceMediaPaths,
+    settings,
     onProgress: (progress) => onProgress?.({ progress })
   })
 
-  await writeCache(projectDir, cacheKey, points)
-  return points
+  await writeCache(projectDir, cacheKey, trackHeatmaps)
+  return trackHeatmaps
 }

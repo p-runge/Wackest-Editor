@@ -1,7 +1,6 @@
 import { expectedOffsetSec } from './mtime-estimate'
 import { pairwiseCorrelate } from './windowed-correlate'
 import { MIN_TRUSTED_CONFIDENCE } from './constants'
-import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 import type { SyncMethod } from '@shared/types/project'
 
 export interface SegmentNode {
@@ -19,15 +18,8 @@ export interface ResolvedSegment {
   method: SyncMethod
 }
 
-/** A fixed-width unified-timeline gap separating a non-overlapping source cluster from the rest. */
-export interface HardCutGap {
-  startSec: number
-  endSec: number
-}
-
 export interface SyncGraphResult {
   segments: Map<string, ResolvedSegment>
-  hardCutGaps: HardCutGap[]
 }
 
 export interface GraphEdge {
@@ -230,12 +222,11 @@ function sortComponentsByEarliestStart(
  * against hand-built edges. Partitions nodes into connected components (via `findConnectedComponents`),
  * resolves each component's internal relative offsets independently (via `resolveComponent`), then
  * lays the components out on the unified timeline: the anchor's component first (unshifted, its own
- * seed at offset 0), every other component placed immediately after the previously placed content,
- * separated by a fixed `NO_OVERLAP_GAP_SEC` gap — this gap is the new "hard cut": a boundary between
- * source clusters that have no trustworthy correlation with each other. Non-anchor components are
- * ordered by their earliest member's estimated mtime start when available (undated components sort
- * last); the anchor's component is always placed first regardless of its own mtime, since it's the
- * deliberately chosen reference (`role: 'main'`), not a floating estimate.
+ * seed at offset 0), every other component placed immediately (directly adjacent) after the
+ * previously placed content — a plain concatenation boundary, no inserted spacer. Non-anchor
+ * components are ordered by their earliest member's estimated mtime start when available (undated
+ * components sort last); the anchor's component is always placed first regardless of its own mtime,
+ * since it's the deliberately chosen reference (`role: 'main'`), not a floating estimate.
  */
 export function resolveSyncGraph(
   nodes: SegmentNode[],
@@ -258,7 +249,6 @@ export function resolveSyncGraph(
   ]
 
   const results = new Map<string, ResolvedSegment>()
-  const gaps: HardCutGap[] = []
   let cursorEndSec = 0
   let isFirstComponent = true
 
@@ -281,13 +271,12 @@ export function resolveSyncGraph(
       maxEnd = Math.max(maxEnd, node.localEndSec + offset)
     }
 
+    // Non-overlapping clusters are concatenated directly after the previous content (no spacer).
     let shift = 0
     if (isFirstComponent) {
       isFirstComponent = false
     } else {
-      const gapStart = cursorEndSec
-      shift = gapStart + NO_OVERLAP_GAP_SEC - minStart
-      gaps.push({ startSec: gapStart, endSec: gapStart + NO_OVERLAP_GAP_SEC })
+      shift = cursorEndSec - minStart
     }
 
     for (const key of componentKeys) {
@@ -302,20 +291,15 @@ export function resolveSyncGraph(
     cursorEndSec = maxEnd + shift
   }
 
-  const normalizeShift = normalizeToEarliestStart(nodes, results)
-  const hardCutGaps = gaps.map((g) => ({
-    startSec: g.startSec - normalizeShift,
-    endSec: g.endSec - normalizeShift
-  }))
-
-  return { segments: results, hardCutGaps }
+  normalizeToEarliestStart(nodes, results)
+  return { segments: results }
 }
 
 /**
  * Builds the pairwise cross-correlation graph across all segments and resolves a globally
  * consistent placement (see `resolveSyncGraph`). Sources/clusters with no trustworthy overlap to
- * the rest of the timeline are placed sequentially after it, separated by a fixed gap — see
- * `NO_OVERLAP_GAP_SEC` — rather than guessed at via an mtime estimate.
+ * the rest of the timeline are concatenated directly after it (in mtime order), rather than guessed
+ * at via an mtime estimate.
  */
 export function buildAndResolveSyncGraph(
   nodes: SegmentNode[],
@@ -332,8 +316,6 @@ export function buildAndResolveSyncGraph(
  * some other segment). Re-reference the whole result set so the earliest actual content across
  * all segments sits at unified time 0, which is what a timeline should look like either way and
  * matches user expectations. This is just a constant shift; all relative offsets are unaffected.
- * Returns the shift that was applied (0 if none), so callers can apply the same shift to any
- * other unified-timeline values computed alongside the results (e.g. hard-cut gap markers).
  */
 function normalizeToEarliestStart(
   nodes: SegmentNode[],

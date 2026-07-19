@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
-export const SCHEMA_VERSION = 1
+// v2: per-source `trackHeatmaps` replaced the single global `heatmap`, and the heatmap providers
+// switched from transcript-only to per-source (audio/video/vision) scoring for camera comparison.
+// v3: the hard-cut-gap concept was removed — non-overlapping clusters are now concatenated directly,
+// so the `hardCutMarkers` field is gone.
+export const SCHEMA_VERSION = 3
 
 export const SourceKindSchema = z.enum(['video', 'audio'])
 export type SourceKind = z.infer<typeof SourceKindSchema>
@@ -46,8 +50,8 @@ export const SourceClipSchema = z.object({
   label: z.string(),
   probed: ProbedMediaInfoSchema,
   role: SourceRoleSchema.optional(),
-  // always exactly one segment per source; non-overlapping source clusters are placed sequentially
-  // with a fixed gap instead — see Project.hardCutMarkers and method: 'no-overlap-gap'
+  // always exactly one segment per source; non-overlapping source clusters are concatenated
+  // directly one after another (method: 'no-overlap-gap' marks a cluster placed without overlap)
   syncSegments: z.array(SyncSegmentSchema),
   waveformCachePath: z.string().optional(),
   thumbnailCachePath: z.string().optional()
@@ -76,17 +80,35 @@ export const TranscriptSegmentSchema = z.object({
 })
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>
 
-export const HeatmapProviderIdSchema = z.enum(['llm-claude', 'llm-openai', 'heuristic-local'])
+// Each id is a distinct scoring strategy selectable in the UI, from cheap/offline to vision-LLM.
+// See src/main/services/providers/heatmap/. Kept as separate options so the user can compare which
+// signal drives the best automatic camera cut for their footage.
+export const HeatmapProviderIdSchema = z.enum([
+  'audio-energy-local', // per-source mic RMS + transcript speaking rate — "who is speaking"
+  'video-motion-local', // per-source ffmpeg motion/scene change — visual dynamism
+  'vision-llm-claude', // sampled frames per camera → Claude vision judgement
+  'vision-llm-openai', // sampled frames per camera → OpenAI vision judgement
+  'vision-llm-local' // sampled frames per camera → local Ollama vision model
+])
 export type HeatmapProviderId = z.infer<typeof HeatmapProviderIdSchema>
 
 export const HeatmapPointSchema = z.object({
   startSec: z.number(),
   endSec: z.number(),
   score: z.number().min(0).max(1),
-  reason: z.string().optional(),
-  provider: HeatmapProviderIdSchema
+  reason: z.string().optional()
 })
 export type HeatmapPoint = z.infer<typeof HeatmapPointSchema>
+
+// One interest curve per source, on the unified timeline. `points` are gapless buckets covering
+// only where the source actually has footage (see sourceCoverageRange). Scores across sources share
+// a common scale so parallel cameras can be compared bucket-by-bucket for the automatic cut.
+export const TrackHeatmapSchema = z.object({
+  sourceId: z.string(),
+  provider: HeatmapProviderIdSchema,
+  points: z.array(HeatmapPointSchema)
+})
+export type TrackHeatmap = z.infer<typeof TrackHeatmapSchema>
 
 // a time range where `value` (a SourceClip.id) is the active video / active audio source
 export const TrackIntervalSchema = z.object({
@@ -132,7 +154,9 @@ export const ProviderConfigSnapshotSchema = z.object({
     languageHint: SttLanguageHintSchema
   }),
   heatmap: z.object({
-    provider: HeatmapProviderIdSchema,
+    // .catch keeps an unknown/legacy provider id (e.g. a pre-v2 'heuristic-local') from failing the
+    // whole providerConfig parse on load — it quietly falls back to the default instead.
+    provider: HeatmapProviderIdSchema.catch('audio-energy-local'),
     model: z.string().optional(),
     chunkSec: z.number().optional()
   })
@@ -147,11 +171,8 @@ export const ProjectSchema = z.object({
   updatedAt: z.string(),
   sources: z.array(SourceClipSchema),
   timelineDurationSec: z.number(),
-  // unified-timeline seconds; each is the start of a fixed NO_OVERLAP_GAP_SEC-wide hard-cut gap
-  // between two source clusters with no trustworthy temporal overlap (see main/jobs/sync/graph.ts)
-  hardCutMarkers: z.array(z.number()),
   transcript: z.array(TranscriptSegmentSchema),
-  heatmap: z.array(HeatmapPointSchema),
+  trackHeatmaps: z.array(TrackHeatmapSchema),
   edit: EditStateSchema,
   providerConfig: ProviderConfigSnapshotSchema
 })
@@ -167,13 +188,12 @@ export function createEmptyProject(name: string, id: string): Project {
     updatedAt: now,
     sources: [],
     timelineDurationSec: 0,
-    hardCutMarkers: [],
     transcript: [],
-    heatmap: [],
+    trackHeatmaps: [],
     edit: { activeVideoIntervals: [], activeAudioIntervals: [], keptRanges: [] },
     providerConfig: {
       stt: { provider: 'openai-whisper-api', languageHint: 'auto' },
-      heatmap: { provider: 'heuristic-local' }
+      heatmap: { provider: 'audio-energy-local' }
     }
   }
 }

@@ -145,6 +145,26 @@ export function initializeKeptRanges(timelineDurationSec: number): KeptRange[] {
   return [{ id: uuidv4(), startSec: 0, endSec: timelineDurationSec }]
 }
 
+/**
+ * Keeps kept-range coverage in step with a timeline that a (re-)sync just extended. When a newly
+ * added, non-overlapping source is appended after a hard-cut gap the timeline grows, but existing
+ * cut ranges stop at the old end — leaving that tail (and the whole appended track) rendered as
+ * fully cut/invisible. This appends one tail range up to the new end, keeping the new footage by
+ * default (like the initial full range) without disturbing the user's real cuts. Empty input just
+ * initializes a full range; a timeline that didn't grow is returned unchanged.
+ */
+export function extendKeptRangesToDuration(
+  keptRanges: KeptRange[],
+  timelineDurationSec: number
+): KeptRange[] {
+  if (timelineDurationSec <= 0) return keptRanges
+  if (keptRanges.length === 0) return initializeKeptRanges(timelineDurationSec)
+
+  const lastEnd = Math.max(...keptRanges.map((r) => r.endSec))
+  if (lastEnd >= timelineDurationSec - 0.01) return keptRanges
+  return [...keptRanges, { id: uuidv4(), startSec: lastEnd, endSec: timelineDurationSec }]
+}
+
 /** Finds whichever kept range covers `atSec`, if any. */
 export function findKeptRangeAt(keptRanges: KeptRange[], atSec: number): KeptRange | undefined {
   return keptRanges.find((r) => atSec >= r.startSec && atSec < r.endSec)

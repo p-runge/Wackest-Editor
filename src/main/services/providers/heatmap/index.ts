@@ -1,27 +1,33 @@
 import type { HeatmapProviderId } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
 import type { HeatmapProvider } from './types'
-import { createHeuristicLocalProvider } from './heuristic-local'
-import { createClaudeHeatmapProvider } from './llm-claude'
-import { createOpenAiHeatmapProvider } from './llm-openai'
+import { createAudioEnergyLocalProvider } from './audio-energy-local'
+import { createVideoMotionLocalProvider } from './video-motion-local'
+import { createVisionClaudeProvider } from './vision-llm-claude'
+import { createVisionOpenAiProvider } from './vision-llm-openai'
+import { createVisionLocalProvider } from './vision-llm-local'
 
 export function createHeatmapProvider(
   id: HeatmapProviderId,
   settings: AppSettings
 ): HeatmapProvider {
   switch (id) {
-    case 'heuristic-local':
-      return createHeuristicLocalProvider()
-    case 'llm-claude':
+    case 'audio-energy-local':
+      return createAudioEnergyLocalProvider()
+    case 'video-motion-local':
+      return createVideoMotionLocalProvider()
+    case 'vision-llm-claude':
       if (!settings.anthropicApiKey) {
         throw new Error('Kein Anthropic API-Key hinterlegt. Bitte in den Einstellungen eintragen.')
       }
-      return createClaudeHeatmapProvider(settings.anthropicApiKey)
-    case 'llm-openai':
+      return createVisionClaudeProvider(settings.anthropicApiKey)
+    case 'vision-llm-openai':
       if (!settings.openaiApiKey) {
         throw new Error('Kein OpenAI API-Key hinterlegt. Bitte in den Einstellungen eintragen.')
       }
-      return createOpenAiHeatmapProvider(settings.openaiApiKey)
+      return createVisionOpenAiProvider(settings.openaiApiKey)
+    case 'vision-llm-local':
+      return createVisionLocalProvider()
   }
 }
 

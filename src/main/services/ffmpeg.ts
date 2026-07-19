@@ -1,7 +1,7 @@
 import ffmpegPath from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
 import ffmpeg from 'fluent-ffmpeg'
-import { readFile, writeFile, rm, readdir } from 'fs/promises'
+import { readFile, writeFile, rm, readdir, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
@@ -303,4 +303,106 @@ export function extractThumbnail(
         size: '320x?'
       })
   })
+}
+
+// Tiny grayscale frames sampled at a fixed rate are all the "motion" heatmap needs: it only cares
+// about how much the picture changes over time, not detail. 64x36 gray @ 4fps keeps the raw buffer
+// small (2304 bytes/frame) and decoding fast even on long clips.
+const MOTION_FPS = 4
+const MOTION_W = 64
+const MOTION_H = 36
+
+function extractGrayFramesToFile(filePath: string, outPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(filePath)
+      .noAudio()
+      .outputOptions([
+        '-vf',
+        `fps=${MOTION_FPS},scale=${MOTION_W}:${MOTION_H},format=gray`,
+        '-f',
+        'rawvideo',
+        '-pix_fmt',
+        'gray'
+      ])
+      .on('error', reject)
+      .on('end', () => resolve())
+      .save(outPath)
+  })
+}
+
+/**
+ * Per-bucket visual motion score for a source: samples tiny grayscale frames, measures the mean
+ * absolute pixel change between consecutive frames, and averages those changes within each
+ * [start, end) range (in source-LOCAL seconds — the caller maps unified buckets to local time).
+ * Returns one raw score per range (higher = more movement); normalization happens in the provider.
+ */
+export async function extractPerBucketMotion(
+  filePath: string,
+  localRanges: Array<[number, number]>
+): Promise<number[]> {
+  if (localRanges.length === 0) return []
+  const tmpPath = join(tmpdir(), `wackest-motion-${randomUUID()}.raw`)
+  try {
+    await extractGrayFramesToFile(filePath, tmpPath)
+    const buffer = await readFile(tmpPath)
+    const frameSize = MOTION_W * MOTION_H
+    const frameCount = Math.floor(buffer.length / frameSize)
+
+    // Motion sample i is the change from frame i to i+1, timestamped at frame i's time.
+    const sums = localRanges.map(() => 0)
+    const counts = localRanges.map(() => 0)
+    for (let f = 0; f < frameCount - 1; f++) {
+      const tSec = f / MOTION_FPS
+      const bucket = localRanges.findIndex(([start, end]) => tSec >= start && tSec < end)
+      if (bucket === -1) continue
+
+      let diff = 0
+      const a = f * frameSize
+      const b = (f + 1) * frameSize
+      for (let p = 0; p < frameSize; p++) diff += Math.abs(buffer[a + p] - buffer[b + p])
+      sums[bucket] += diff / frameSize
+      counts[bucket] += 1
+    }
+    return sums.map((sum, i) => (counts[i] > 0 ? sum / counts[i] : 0))
+  } finally {
+    await rm(tmpPath, { force: true })
+  }
+}
+
+export interface ExtractedFrame {
+  timestampSec: number
+  /** JPEG image encoded as a base64 string, for sending to a vision model. */
+  base64: string
+}
+
+/**
+ * Grabs one JPEG frame at each given timestamp (source-LOCAL seconds), returned as base64 so a
+ * vision provider can send them inline. Small default size keeps image-token cost/latency low.
+ */
+export async function extractFramesAt(
+  filePath: string,
+  timestampsSec: number[],
+  size = '512x?'
+): Promise<ExtractedFrame[]> {
+  if (timestampsSec.length === 0) return []
+  const folder = join(tmpdir(), `wackest-frames-${randomUUID()}`)
+  await mkdir(folder, { recursive: true })
+  try {
+    const frames: ExtractedFrame[] = []
+    for (let i = 0; i < timestampsSec.length; i++) {
+      const atSec = Math.max(0, timestampsSec[i])
+      const filename = `frame-${i}.jpg`
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(filePath)
+          .on('error', reject)
+          .on('end', () => resolve())
+          .screenshots({ timestamps: [atSec], filename, folder, size })
+      })
+      const buffer = await readFile(join(folder, filename))
+      frames.push({ timestampSec: atSec, base64: buffer.toString('base64') })
+    }
+    return frames
+  } finally {
+    await rm(folder, { recursive: true, force: true })
+  }
 }

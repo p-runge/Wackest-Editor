@@ -3,6 +3,7 @@ import type { KeptRange } from '@shared/types/project'
 import {
   computeCutLaneSegments,
   computeProgramEndSec,
+  extendKeptRangesToDuration,
   keptRangeContentSpan,
   mapContentRangeToPlacementRanges,
   mapContentTimeToPlacementTime,
@@ -15,6 +16,35 @@ import {
 function range(id: string, startSec: number, endSec: number): KeptRange {
   return { id, startSec, endSec }
 }
+
+describe('extendKeptRangesToDuration', () => {
+  it('appends a tail range when a sync grows the timeline past the last cut', () => {
+    // Repro of the "appended, non-overlapping track is invisible" bug: kept ends at 111.5 but the
+    // synced timeline now reaches 150.5.
+    const result = extendKeptRangesToDuration([range('k1', 0, 111.5)], 150.5)
+    expect(result).toEqual([
+      range('k1', 0, 111.5),
+      { id: expect.any(String), startSec: 111.5, endSec: 150.5 }
+    ])
+  })
+
+  it('initializes a full range from empty input', () => {
+    const result = extendKeptRangesToDuration([], 90)
+    expect(result).toEqual([{ id: expect.any(String), startSec: 0, endSec: 90 }])
+  })
+
+  it('leaves ranges untouched when the timeline did not grow', () => {
+    const kept = [range('k1', 0, 40), range('k2', 60, 100)]
+    expect(extendKeptRangesToDuration(kept, 100)).toBe(kept)
+  })
+
+  it('does not disturb existing cuts when extending the tail', () => {
+    const kept = [range('k1', 0, 30), range('k2', 50, 80)]
+    const result = extendKeptRangesToDuration(kept, 120)
+    expect(result.slice(0, 2)).toEqual(kept)
+    expect(result[2]).toEqual({ id: expect.any(String), startSec: 80, endSec: 120 })
+  })
+})
 
 describe('computeCutLaneSegments', () => {
   it('fills every stretch of the timeline, marking uncovered ground as cut', () => {

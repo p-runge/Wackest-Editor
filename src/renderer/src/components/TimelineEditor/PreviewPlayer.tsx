@@ -12,7 +12,6 @@ import {
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
 import { toMediaUrl } from '@shared/types/media-url'
-import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 
 function PreviewPlayer(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
@@ -82,7 +81,7 @@ function PreviewPlayer(): React.JSX.Element | null {
   // Entering a stretch with nothing to play unmounts the <video>/<audio> elements, so nothing is
   // left to drive `playheadSec` forward via "timeupdate". In a cut gap, playback skips straight
   // to the next chunk and keeps going — the program only truly ends after the last chunk. Only a
-  // stretch whose *content* has no source at all (hard-cut gap) still stops playback.
+  // stretch whose *content* has no source at all still stops playback.
   useEffect(() => {
     if (!isPlaying || !project || videoSource || audioSource) return
     if (contentSec === null) {
@@ -143,14 +142,9 @@ function PreviewPlayer(): React.JSX.Element | null {
   }
 
   if (!videoSource) {
-    const inHardCutGap = project.hardCutMarkers.some(
-      (gapStartSec) => contentSec >= gapStartSec && contentSec < gapStartSec + NO_OVERLAP_GAP_SEC
-    )
     return (
       <div className="preview-player preview-player--empty">
-        {inHardCutGap
-          ? 'Hard Cut: keine Aufnahme überschneidet sich an dieser Stelle.'
-          : 'Keine aktive Kamera für diesen Zeitpunkt.'}
+        Keine aktive Kamera für diesen Zeitpunkt.
       </div>
     )
   }

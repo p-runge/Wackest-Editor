@@ -11,7 +11,7 @@ function confidenceBadge(
 ): { text: string; variant: 'secondary' | 'success' | 'destructive' } {
   if (method === 'manual') return { text: 'manuell', variant: 'secondary' }
   if (method === 'no-overlap-gap') {
-    return { text: 'kein Overlap – Lücke eingefügt', variant: 'destructive' }
+    return { text: 'kein Overlap – angehängt', variant: 'secondary' }
   }
   if (confidence >= 0.3) return { text: 'hoch', variant: 'success' }
   if (confidence >= 0.15) return { text: 'mittel', variant: 'secondary' }
@@ -58,13 +58,6 @@ function SyncPanel(): React.JSX.Element | null {
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
-      )}
-
-      {project.hardCutMarkers.length > 0 && (
-        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-          Hard-Cuts (kein Overlap) bei:{' '}
-          {project.hardCutMarkers.map((t) => `${t.toFixed(1)}s`).join(', ')}
-        </div>
       )}
 
       <ul className="flex flex-col gap-2">

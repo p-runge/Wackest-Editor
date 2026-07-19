@@ -65,13 +65,13 @@ function SettingsPanel(): React.JSX.Element {
   if (project?.providerConfig.stt.provider === 'openai-whisper-api') {
     openaiKeyRequiredBy.push('Transkription (OpenAI Whisper API)')
   }
-  if (project?.providerConfig.heatmap.provider === 'llm-openai') {
-    openaiKeyRequiredBy.push('Heatmap (OpenAI API)')
+  if (project?.providerConfig.heatmap.provider === 'vision-llm-openai') {
+    openaiKeyRequiredBy.push('Heatmap (OpenAI Vision API)')
   }
 
   const anthropicKeyRequiredBy: string[] = []
-  if (project?.providerConfig.heatmap.provider === 'llm-claude') {
-    anthropicKeyRequiredBy.push('Heatmap (Claude API)')
+  if (project?.providerConfig.heatmap.provider === 'vision-llm-claude') {
+    anthropicKeyRequiredBy.push('Heatmap (Claude Vision API)')
   }
 
   const whisperModelRequiredBy: string[] = []

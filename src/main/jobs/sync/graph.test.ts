@@ -8,7 +8,6 @@ import {
   type GraphEdge
 } from './graph'
 import { MIN_TRUSTED_CONFIDENCE } from './constants'
-import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 
 function node(
   sourceId: string,
@@ -98,14 +97,14 @@ describe('findConnectedComponents', () => {
 })
 
 describe('resolveSyncGraph', () => {
-  it('places a second, non-overlapping cluster after the first with a fixed gap', () => {
+  it('places a second, non-overlapping cluster directly after the first (no gap)', () => {
     const a = node('a', 10, 1000) // anchor
     const b = node('b', 8, 3000)
     const c = node('c', 6, 500)
     const d = node('d', 4, 600)
 
     const edges = [edge(a, b, 2, 0.5), edge(c, d, 1, 0.6)]
-    const { segments, hardCutGaps } = resolveSyncGraph([a, b, c, d], edges, key(a))
+    const { segments } = resolveSyncGraph([a, b, c, d], edges, key(a))
 
     expect(segments.get(key(a))).toEqual({
       offsetSec: 0,
@@ -118,24 +117,23 @@ describe('resolveSyncGraph', () => {
       method: 'cross-correlation'
     })
 
-    // cluster1 ends at max(10, 2+8) = 10; cluster2 must start at 10 + NO_OVERLAP_GAP_SEC
-    expect(hardCutGaps).toEqual([{ startSec: 10, endSec: 10 + NO_OVERLAP_GAP_SEC }])
+    // cluster1 ends at max(10, 2+8) = 10; cluster2 is concatenated directly at 10 (no spacer)
     expect(segments.get(key(c))).toEqual({
-      offsetSec: 10 + NO_OVERLAP_GAP_SEC,
+      offsetSec: 10,
       confidence: 0,
       method: 'no-overlap-gap'
     })
     expect(segments.get(key(d))).toEqual({
-      offsetSec: 10 + NO_OVERLAP_GAP_SEC + 1,
+      offsetSec: 11,
       confidence: 0.6,
       method: 'cross-correlation'
     })
   })
 
-  it('places a singleton unreachable node with confidence 0 and method no-overlap-gap', () => {
+  it('places a singleton unreachable node directly after the anchor with confidence 0', () => {
     const a = node('a', 10)
     const x = node('x', 5)
-    const { segments, hardCutGaps } = resolveSyncGraph([a, x], [], key(a))
+    const { segments } = resolveSyncGraph([a, x], [], key(a))
 
     expect(segments.get(key(a))).toEqual({
       offsetSec: 0,
@@ -143,11 +141,10 @@ describe('resolveSyncGraph', () => {
       method: 'cross-correlation'
     })
     expect(segments.get(key(x))).toEqual({
-      offsetSec: 10 + NO_OVERLAP_GAP_SEC,
+      offsetSec: 10,
       confidence: 0,
       method: 'no-overlap-gap'
     })
-    expect(hardCutGaps).toEqual([{ startSec: 10, endSec: 10 + NO_OVERLAP_GAP_SEC }])
   })
 
   it('always places the anchor component first regardless of mtime, orders the rest by mtime then array index', () => {
@@ -156,27 +153,25 @@ describe('resolveSyncGraph', () => {
     const w = node('w', 1, null) // no mtime, appears before z in the node array
     const z = node('z', 1, null) // no mtime, appears after w — tiebreak by array order
 
-    const { hardCutGaps } = resolveSyncGraph([a, x, w, z], [], key(a))
+    const { segments } = resolveSyncGraph([a, x, w, z], [], key(a))
 
-    // 3 non-anchor singleton components -> 3 gaps, in placement order: x, then w, then z
-    expect(hardCutGaps).toHaveLength(3)
-    const [gapBeforeX, gapBeforeW, gapBeforeZ] = hardCutGaps
-    expect(gapBeforeX.startSec).toBe(2) // right after anchor's own end
-    expect(gapBeforeW.startSec).toBeGreaterThan(gapBeforeX.startSec)
-    expect(gapBeforeZ.startSec).toBeGreaterThan(gapBeforeW.startSec)
+    // Concatenated in placement order: anchor (0–2), then x, then w, then z — strictly increasing.
+    expect(segments.get(key(x))!.offsetSec).toBe(2) // right after anchor's own end
+    expect(segments.get(key(w))!.offsetSec).toBeGreaterThan(segments.get(key(x))!.offsetSec)
+    expect(segments.get(key(z))!.offsetSec).toBeGreaterThan(segments.get(key(w))!.offsetSec)
   })
 
-  it('shifts both segment offsets and hard-cut gap markers so the earliest content sits at 0', () => {
+  it('shifts all segment offsets so the earliest content sits at 0', () => {
     const a = node('a', 10) // anchor
     const b = node('b', 5)
-    const c = node('c', 1) // isolated singleton -> forces a gap after cluster1
+    const c = node('c', 1) // isolated singleton -> concatenated after cluster1
 
     // b is placed 3s *before* the anchor, so the whole result set must shift right by 3
-    const { segments, hardCutGaps } = resolveSyncGraph([a, b, c], [edge(a, b, -3, 0.7)], key(a))
+    const { segments } = resolveSyncGraph([a, b, c], [edge(a, b, -3, 0.7)], key(a))
 
     expect(segments.get(key(b))!.offsetSec).toBe(0) // now the earliest point
     expect(segments.get(key(a))!.offsetSec).toBe(3)
-    expect(hardCutGaps).toEqual([{ startSec: 13, endSec: 13 + NO_OVERLAP_GAP_SEC }])
-    expect(segments.get(key(c))!.offsetSec).toBe(13 + NO_OVERLAP_GAP_SEC)
+    // cluster1 ends at a's end = 3 + 10 = 13; c is concatenated directly there.
+    expect(segments.get(key(c))!.offsetSec).toBe(13)
   })
 })

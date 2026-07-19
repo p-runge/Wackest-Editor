@@ -42,7 +42,7 @@ function ToolSidebar(): React.JSX.Element | null {
   const hasFiles = project.sources.length > 0
   const isSynced = project.sources.some((s) => s.syncSegments.length > 0)
   const hasTranscript = project.transcript.length > 0
-  const hasHeatmap = project.heatmap.length > 0
+  const hasHeatmap = project.trackHeatmaps.length > 0
   const hasExported = !!lastExportPath
 
   const doneById: Record<ToolId, boolean> = {

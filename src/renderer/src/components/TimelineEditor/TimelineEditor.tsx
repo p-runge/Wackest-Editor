@@ -14,6 +14,7 @@ import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
 import CutTool from './CutTool'
 import { colorForSourceId } from '../../lib/colors'
+import { deriveGlobalHeatmap } from '../../lib/heatmap'
 import {
   mapUnifiedTimeToLocal,
   computeCutLaneSegments,
@@ -33,14 +34,13 @@ import {
 import { Button } from '../ui/button'
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
 import type { SourceClip } from '@shared/types/project'
-import { NO_OVERLAP_GAP_SEC } from '@shared/types/sync-constants'
 import './timeline-editor.css'
 
 const PREVIEW_MIN_WIDTH_PX = 280
 const PREVIEW_MAX_WIDTH_PX = 960
 const PREVIEW_DEFAULT_WIDTH_PX = 480
 
-// Full-height cross-track overlays (hard-cut gaps, split markers) live in the same
+// Full-height cross-track overlays (split markers) live in the same
 // `position: relative` container as the ruler and the Schnitt lane, so a plain `top: 0` would
 // paint over those two rows too, not just the content lanes below them. Offsetting by their
 // combined height keeps the overlays scoped to the lanes they're actually meant to mark.
@@ -133,9 +133,16 @@ function TimelineEditor(): React.JSX.Element | null {
     )
   }, [project])
 
+  // The single overview curve for the Heatmap lane is derived from the per-source track heatmaps
+  // (max across sources at each instant) — the model no longer stores one global heatmap.
+  const globalHeatmap = useMemo(
+    () => (project ? deriveGlobalHeatmap(project.trackHeatmaps) : []),
+    [project]
+  )
+
   const placedHeatmap = useMemo(() => {
     if (!project) return []
-    return project.heatmap.flatMap((point) =>
+    return globalHeatmap.flatMap((point) =>
       mapContentRangeToPlacementRanges(project.edit.keptRanges, point.startSec, point.endSec).map(
         (piece) => ({
           startSec: piece.placementStartSec,
@@ -145,7 +152,7 @@ function TimelineEditor(): React.JSX.Element | null {
         })
       )
     )
-  }, [project])
+  }, [project, globalHeatmap])
 
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
@@ -451,7 +458,7 @@ function TimelineEditor(): React.JSX.Element | null {
           {project.transcript.length > 0 && (
             <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Untertitel</LaneLabel>
           )}
-          {project.heatmap.length > 0 && (
+          {globalHeatmap.length > 0 && (
             <LaneLabel heightPx={SIMPLE_LANE_HEIGHT_PX}>Heatmap</LaneLabel>
           )}
           <div style={{ height: BOTTOM_SPACER_PX }} />
@@ -531,7 +538,7 @@ function TimelineEditor(): React.JSX.Element | null {
                 />
               )}
 
-              {project.heatmap.length > 0 && (
+              {globalHeatmap.length > 0 && (
                 <HeatmapLaneTrack
                   heatmap={placedHeatmap}
                   pixelsPerSecond={pixelsPerSecond}
@@ -540,27 +547,6 @@ function TimelineEditor(): React.JSX.Element | null {
               )}
 
               <div style={{ height: BOTTOM_SPACER_PX }} />
-              {project.hardCutMarkers.flatMap((gapStartSec) =>
-                mapContentRangeToPlacementRanges(
-                  project.edit.keptRanges,
-                  gapStartSec,
-                  gapStartSec + NO_OVERLAP_GAP_SEC
-                ).map((piece) => (
-                  <div
-                    key={`${gapStartSec}-${piece.placementStartSec}`}
-                    className="timeline-hardcut-gap"
-                    style={{
-                      top: BELOW_CUT_LANE_PX,
-                      left: piece.placementStartSec * pixelsPerSecond,
-                      width: Math.max(
-                        1,
-                        (piece.placementEndSec - piece.placementStartSec) * pixelsPerSecond
-                      )
-                    }}
-                    title="Hard Cut: keine zeitliche Überschneidung"
-                  />
-                ))
-              )}
               {splitBoundarySecs.map((atSec) => (
                 <div
                   key={atSec}

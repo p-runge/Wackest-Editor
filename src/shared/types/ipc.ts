@@ -1,4 +1,4 @@
-import type { Project, SourceClip, TranscriptSegment, HeatmapPoint } from './project'
+import type { Project, SourceClip, TranscriptSegment, TrackHeatmap } from './project'
 import type { AppSettings } from './settings'
 
 export const IpcChannels = {
@@ -90,7 +90,6 @@ export interface SyncRunArgs {
 
 export interface SyncRunResult {
   sources: SourceClip[]
-  hardCutMarkers: number[]
 }
 
 export interface SyncProgressEvent {
@@ -115,7 +114,7 @@ export interface HeatmapRunArgs {
   bucketSec?: number
 }
 
-export type HeatmapRunResult = HeatmapPoint[]
+export type HeatmapRunResult = TrackHeatmap[]
 
 export interface HeatmapProgressEvent {
   progress: number

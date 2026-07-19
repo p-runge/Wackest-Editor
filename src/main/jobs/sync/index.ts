@@ -12,7 +12,6 @@ export interface SyncProgressUpdate {
 
 export interface SyncResult {
   sources: SourceClip[]
-  hardCutMarkers: number[]
 }
 
 interface PreparedSource {
@@ -23,9 +22,9 @@ interface PreparedSource {
 
 /**
  * Runs the pairwise sync graph across all audio-bearing sources of a project, returning updated
- * SourceClip entries with a single resolved `syncSegment` each, plus the unified-timeline hard-cut
- * gap markers (boundaries between source clusters with no trustworthy temporal overlap). Sources
- * without an audio track are returned unchanged (they can only be placed manually).
+ * SourceClip entries with a single resolved `syncSegment` each. Clusters with no trustworthy
+ * temporal overlap are concatenated directly after the rest. Sources without an audio track are
+ * returned unchanged (they can only be placed manually).
  */
 export async function runSyncForProject(
   sources: SourceClip[],
@@ -61,11 +60,7 @@ export async function runSyncForProject(
   onProgress?.({ stage: 'correlating', progress: 0 })
   const mainSource = sources.find((s) => s.role === 'main')
   const anchorKey = mainSource ? nodeKey(mainSource.id, 0) : null
-  const { segments: resolved, hardCutGaps } = buildAndResolveSyncGraph(
-    nodes,
-    anchorKey,
-    SYNC_SAMPLE_RATE
-  )
+  const { segments: resolved } = buildAndResolveSyncGraph(nodes, anchorKey, SYNC_SAMPLE_RATE)
   onProgress?.({ stage: 'done', progress: 1 })
 
   const segmentsBySource = new Map<string, SyncSegment>()
@@ -87,5 +82,5 @@ export async function runSyncForProject(
     return { ...source, syncSegments: [segment] }
   })
 
-  return { sources: updatedSources, hardCutMarkers: hardCutGaps.map((g) => g.startSec) }
+  return { sources: updatedSources }
 }

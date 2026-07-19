@@ -1,15 +1,25 @@
-import { Flame } from 'lucide-react'
+import { useState } from 'react'
+import { Flame, SwitchCamera } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { useSettingsUIStore } from '../../state/settings-ui-store'
 import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
-import { colorForScore } from '../../lib/colors'
-import { findHeatmapPeakIndices } from '../../lib/heatmap'
+import { colorForScore, colorForSourceId } from '../../lib/colors'
+import { deriveGlobalHeatmap, findHeatmapPeakIndices } from '../../lib/heatmap'
 import type { HeatmapProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { Slider } from '../ui/slider'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
+
+const PROVIDER_LABELS: Record<HeatmapProviderId, string> = {
+  'audio-energy-local': 'Wer spricht (Audio, lokal)',
+  'video-motion-local': 'Video-Dynamik (lokal)',
+  'vision-llm-claude': 'Vision-Urteil (Claude)',
+  'vision-llm-openai': 'Vision-Urteil (OpenAI)',
+  'vision-llm-local': 'Vision-Urteil (lokal/Ollama)'
+}
 
 function formatTime(sec: number): string {
   const total = Math.max(0, Math.round(sec))
@@ -20,12 +30,16 @@ function formatTime(sec: number): string {
 
 function providerExplanationFor(provider: HeatmapProviderId): string {
   switch (provider) {
-    case 'heuristic-local':
-      return 'Wertet Lautstärke, Sprechtempo und Ausrufe/Fragen im Transkript aus und kombiniert sie zu einem Score – läuft lokal, ohne API-Aufruf.'
-    case 'llm-claude':
-      return 'Schickt das Transkript abschnittsweise an die Claude API, die Inhalte wie spannende Aussagen, Emotionen oder Wendepunkte erkennt und bewertet.'
-    case 'llm-openai':
-      return 'Schickt das Transkript abschnittsweise an die OpenAI API, die Inhalte wie spannende Aussagen, Emotionen oder Wendepunkte erkennt und bewertet.'
+    case 'audio-energy-local':
+      return 'Vergleicht pro Kamera die Lautstärke der eigenen Tonspur (wer spricht ins eigene Mikro) und gewichtet mit dem Sprechtempo aus dem Transkript – lokal, ohne API-Aufruf.'
+    case 'video-motion-local':
+      return 'Misst pro Kamera, wie viel sich im Bild bewegt (Bewegung/Szenenwechsel) – rein visuell, lokal, ohne API-Aufruf.'
+    case 'vision-llm-claude':
+      return 'Schickt Standbilder jeder Kamera an die Claude-Vision-API, die bewertet, welche Einstellung am interessantesten ist (z. B. sichtbarer Sprecher, Handlung).'
+    case 'vision-llm-openai':
+      return 'Schickt Standbilder jeder Kamera an die OpenAI-Vision-API, die bewertet, welche Einstellung am interessantesten ist.'
+    case 'vision-llm-local':
+      return 'Bewertet Standbilder jeder Kamera mit einem lokal laufenden Vision-Modell über Ollama (z. B. moondream) – offline, kostenlos.'
   }
 }
 
@@ -33,19 +47,55 @@ function missingSettingFor(
   provider: HeatmapProviderId,
   settings: { openaiApiKey?: string; anthropicApiKey?: string }
 ): { message: string; fieldId: string } | null {
-  if (provider === 'llm-claude' && !settings.anthropicApiKey) {
+  if (provider === 'vision-llm-claude' && !settings.anthropicApiKey) {
     return {
-      message: 'Für die Claude API wird ein Anthropic API-Key benötigt.',
+      message: 'Für die Claude-Vision-API wird ein Anthropic API-Key benötigt.',
       fieldId: 'anthropic-key'
     }
   }
-  if (provider === 'llm-openai' && !settings.openaiApiKey) {
+  if (provider === 'vision-llm-openai' && !settings.openaiApiKey) {
     return {
-      message: 'Für die OpenAI API wird ein OpenAI API-Key benötigt.',
+      message: 'Für die OpenAI-Vision-API wird ein OpenAI API-Key benötigt.',
       fieldId: 'openai-key'
     }
   }
   return null
+}
+
+/** One source's interest curve, buckets positioned on the unified timeline. */
+function TrackHeatmapRow({
+  label,
+  color,
+  points,
+  durationSec
+}: {
+  label: string
+  color: string
+  points: Array<{ startSec: number; endSec: number; score: number }>
+  durationSec: number
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex w-20 shrink-0 items-center gap-1.5 truncate text-xs text-foreground/90">
+        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <span className="truncate">{label}</span>
+      </span>
+      <div className="relative h-5 flex-1 overflow-hidden rounded border border-border bg-muted/40">
+        {points.map((point, i) => (
+          <div
+            key={i}
+            className="absolute top-0 bottom-0"
+            style={{
+              left: `${(point.startSec / durationSec) * 100}%`,
+              width: `${((point.endSec - point.startSec) / durationSec) * 100}%`,
+              backgroundColor: colorForScore(point.score)
+            }}
+            title={`${formatTime(point.startSec)}–${formatTime(point.endSec)} · Score ${point.score.toFixed(2)}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function HeatmapPanel(): React.JSX.Element | null {
@@ -55,47 +105,62 @@ function HeatmapPanel(): React.JSX.Element | null {
   const error = useProjectStore((state) => state.heatmapError)
   const runHeatmap = useProjectStore((state) => state.runHeatmap)
   const setHeatmapProvider = useProjectStore((state) => state.setHeatmapProvider)
+  const generateAutoCut = useProjectStore((state) => state.generateAutoCut)
   const settings = useSettingsStore((state) => state.settings)
   const openSettings = useSettingsUIStore((state) => state.openSettings)
 
+  const [minShotSec, setMinShotSec] = useState(2.5)
+  const [audioFollowsVideo, setAudioFollowsVideo] = useState(false)
+
   if (!project) return null
-  if (project.transcript.length === 0) {
+
+  const videoSources = project.sources.filter((s) => s.probed.hasVideo)
+  const isSynced = project.sources.some((s) => s.syncSegments.length > 0)
+
+  if (videoSources.length === 0 || !isSynced) {
     return (
       <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-        Zuerst ein Transkript erzeugen – die Heatmap wertet den gesprochenen Inhalt aus.
+        {videoSources.length === 0
+          ? 'Keine Videospuren vorhanden – zuerst Videos importieren.'
+          : 'Zuerst synchronisieren, damit die parallelen Kameras verglichen werden können.'}
       </p>
     )
   }
 
-  const duration = project.timelineDurationSec || 1
-  const peakIndices = findHeatmapPeakIndices(project.heatmap)
-  const missingSetting = missingSettingFor(project.providerConfig.heatmap.provider, settings)
+  const provider = project.providerConfig.heatmap.provider
+  const missingSetting = missingSettingFor(provider, settings)
   const errorFieldId = error ? settingsFieldIdForErrorMessage(error) : null
+  const duration = project.timelineDurationSec || 1
+  const sourceIds = project.sources.map((s) => s.id)
+
+  const globalHeatmap = deriveGlobalHeatmap(project.trackHeatmaps)
+  const peakIndices = findHeatmapPeakIndices(globalHeatmap)
+  const hasResult = project.trackHeatmaps.length > 0
 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        Interessante Abschnitte anhand des Transkripts bewerten.
+        Interesse pro Kamera bewerten und daraus einen automatischen Schnitt erzeugen.
       </p>
 
       <div className="flex flex-col gap-1">
-        <Label className="text-xs font-normal text-muted-foreground">Anbieter</Label>
+        <Label className="text-xs font-normal text-muted-foreground">Kriterium / Anbieter</Label>
         <Select
-          value={project.providerConfig.heatmap.provider}
+          value={provider}
           onValueChange={(v) => void setHeatmapProvider(v as HeatmapProviderId)}
         >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="heuristic-local">Lokale Heuristik</SelectItem>
-            <SelectItem value="llm-claude">Claude API</SelectItem>
-            <SelectItem value="llm-openai">OpenAI API</SelectItem>
+            {(Object.keys(PROVIDER_LABELS) as HeatmapProviderId[]).map((id) => (
+              <SelectItem key={id} value={id}>
+                {PROVIDER_LABELS[id]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          {providerExplanationFor(project.providerConfig.heatmap.provider)}
-        </p>
+        <p className="text-xs text-muted-foreground">{providerExplanationFor(provider)}</p>
         {missingSetting && (
           <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-warning">
             {missingSetting.message}
@@ -136,58 +201,106 @@ function HeatmapPanel(): React.JSX.Element | null {
         </p>
       )}
 
-      {project.heatmap.length === 0 ? (
+      {!hasResult ? (
         <p className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
           Noch keine Heatmap berechnet.
         </p>
       ) : (
         <>
-          <TooltipProvider delayDuration={150}>
-            <div className="flex h-6 w-full overflow-hidden rounded-md border border-border">
-              {project.heatmap.map((point, i) => {
-                const isPeak = peakIndices.has(i)
-                return (
-                  <div
-                    key={i}
-                    className="relative"
-                    style={{
-                      width: `${((point.endSec - point.startSec) / duration) * 100}%`,
-                      backgroundColor: colorForScore(point.score)
-                    }}
-                    title={
-                      isPeak
-                        ? undefined
-                        : `${formatTime(point.startSec)}–${formatTime(point.endSec)} · Score ${point.score.toFixed(2)}`
-                    }
-                  >
-                    {isPeak && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="absolute inset-x-0 top-0.5 mx-auto h-1.5 w-1.5 cursor-help rounded-full border border-black/40 bg-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          <p className="font-medium">
-                            {formatTime(point.startSec)}–{formatTime(point.endSec)} · Score{' '}
-                            {point.score.toFixed(2)}
-                          </p>
-                          <p className="text-muted-foreground">{point.reason}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-                )
-              })}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-normal text-muted-foreground">Pro Kamera</Label>
+            {project.trackHeatmaps.map((track) => {
+              const source = project.sources.find((s) => s.id === track.sourceId)
+              return (
+                <TrackHeatmapRow
+                  key={track.sourceId}
+                  label={source?.label ?? track.sourceId}
+                  color={colorForSourceId(track.sourceId, sourceIds)}
+                  points={track.points}
+                  durationSec={duration}
+                />
+              )
+            })}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-normal text-muted-foreground">
+              Gesamt (interessanteste Kamera)
+            </Label>
+            <TooltipProvider delayDuration={150}>
+              <div className="flex h-6 w-full overflow-hidden rounded-md border border-border">
+                {globalHeatmap.map((point, i) => {
+                  const isPeak = peakIndices.has(i)
+                  return (
+                    <div
+                      key={i}
+                      className="relative"
+                      style={{
+                        width: `${((point.endSec - point.startSec) / duration) * 100}%`,
+                        backgroundColor: colorForScore(point.score)
+                      }}
+                      title={
+                        isPeak
+                          ? undefined
+                          : `${formatTime(point.startSec)}–${formatTime(point.endSec)} · Score ${point.score.toFixed(2)}`
+                      }
+                    >
+                      {isPeak && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="absolute inset-x-0 top-0.5 mx-auto h-1.5 w-1.5 cursor-help rounded-full border border-black/40 bg-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <p className="font-medium">
+                              {formatTime(point.startSec)}–{formatTime(point.endSec)} · Score{' '}
+                              {point.score.toFixed(2)}
+                            </p>
+                            <p className="text-muted-foreground">{point.reason}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </TooltipProvider>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <p className="text-sm font-medium">Automatischer Schnitt</p>
+            <p className="text-xs text-muted-foreground">
+              Setzt die aktive Kamera pro Zeitpunkt auf die höchstbewertete Spur. Rückgängig per
+              Undo.
+            </p>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Mindest-Shot-Länge</span>
+                <span>{minShotSec.toFixed(1)}s</span>
+              </div>
+              <Slider
+                min={0.5}
+                max={8}
+                step={0.5}
+                value={[minShotSec]}
+                onValueChange={([v]) => setMinShotSec(v)}
+              />
             </div>
-          </TooltipProvider>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>niedrig</span>
-            <div
-              className="h-2 flex-1 rounded-full"
-              style={{
-                background: `linear-gradient(to right, ${colorForScore(0)}, ${colorForScore(1)})`
-              }}
-            />
-            <span>hoch</span>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={audioFollowsVideo}
+                onChange={(e) => setAudioFollowsVideo(e.target.checked)}
+              />
+              Ton folgt Bild (aktives Audio mit umschalten)
+            </label>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => void generateAutoCut({ minShotSec, audioFollowsVideo })}
+            >
+              <SwitchCamera />
+              Auto-Schnitt generieren
+            </Button>
           </div>
         </>
       )}
