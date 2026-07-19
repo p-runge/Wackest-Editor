@@ -130,6 +130,7 @@ export const useProjectStore = create<ProjectState>()(
           const name = dir.split(/[/\\]/).pop() ?? 'Neues Projekt'
           const project = createEmptyProject(name, uuidv4())
           set({ project, projectDir: dir, projectError: null })
+          useProjectStore.temporal.getState().clear()
           await window.api.project.save({ projectDir: dir, project })
           await recordRecentProject(dir, name)
         },
@@ -142,6 +143,7 @@ export const useProjectStore = create<ProjectState>()(
               projectFilePath: filePath
             })
             set({ project, projectDir, projectError: null })
+            useProjectStore.temporal.getState().clear()
             await recordRecentProject(projectDir, project.name)
           } catch (err) {
             set({ projectError: String(err) })
@@ -154,6 +156,7 @@ export const useProjectStore = create<ProjectState>()(
               projectDir
             })
             set({ project, projectDir: resolvedDir, projectError: null })
+            useProjectStore.temporal.getState().clear()
             await recordRecentProject(resolvedDir, project.name)
           } catch (err) {
             set({ projectError: String(err) })
@@ -454,6 +457,10 @@ export const useProjectStore = create<ProjectState>()(
         }
       }
     },
-    { partialize: (state) => ({ project: state.project }), limit: 50 }
+    {
+      partialize: (state) => ({ project: state.project }),
+      equality: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      limit: 50
+    }
   )
 )
