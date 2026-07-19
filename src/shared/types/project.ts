@@ -171,6 +171,38 @@ export function createEmptyProject(name: string, id: string): Project {
   }
 }
 
+// Recovers a project from data whose structure doesn't fully match ProjectSchema by validating
+// each top-level field independently and falling back to empty-project defaults for any field
+// that fails. Used to offer a "discard unmatched properties" recovery path when loading a
+// project.json that predates a schema change, instead of failing the load outright.
+export function recoverProject(
+  raw: unknown,
+  fallback: { id: string; name: string }
+): { project: Project; discardedKeys: string[] } {
+  const base = createEmptyProject(fallback.name, fallback.id)
+  const rawObj =
+    typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : undefined
+
+  const discardedKeys: string[] = []
+  const result: Record<string, unknown> = { ...base }
+
+  for (const key of Object.keys(ProjectSchema.shape) as Array<keyof typeof ProjectSchema.shape>) {
+    if (!rawObj || !(key in rawObj)) {
+      if (key !== 'schemaVersion') discardedKeys.push(key)
+      continue
+    }
+    const fieldResult = ProjectSchema.shape[key].safeParse(rawObj[key])
+    if (fieldResult.success) {
+      result[key] = fieldResult.data
+    } else {
+      discardedKeys.push(key)
+    }
+  }
+
+  result.schemaVersion = SCHEMA_VERSION
+  return { project: ProjectSchema.parse(result), discardedKeys }
+}
+
 export function recomputeTimelineDuration(project: Project): number {
   let maxEnd = 0
   for (const source of project.sources) {

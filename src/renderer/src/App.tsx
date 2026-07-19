@@ -6,6 +6,7 @@ import TopBar from './components/TopBar/TopBar'
 import StartScreen from './components/StartScreen/StartScreen'
 import ToolSidebar from './components/ToolSidebar/ToolSidebar'
 import TimelineEditor from './components/TimelineEditor/TimelineEditor'
+import InvalidProjectModal from './components/InvalidProjectModal/InvalidProjectModal'
 
 function App(): React.JSX.Element {
   const project = useProjectStore((state) => state.project)
@@ -54,6 +55,7 @@ function App(): React.JSX.Element {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
+      <InvalidProjectModal />
       {!project ? (
         <StartScreen />
       ) : (

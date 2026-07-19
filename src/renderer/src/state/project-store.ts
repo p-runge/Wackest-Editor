@@ -34,9 +34,16 @@ async function recordRecentProject(projectDir: string, name: string): Promise<vo
   useSettingsStore.setState({ settings: merged, loaded: true })
 }
 
+export interface InvalidProjectInfo {
+  projectFilePath: string
+  projectDir: string
+  issues: string[]
+}
+
 interface ProjectState {
   project: Project | null
   projectDir: string | null
+  invalidProject: InvalidProjectInfo | null
   isImporting: boolean
   importingCount: number
   isSyncing: boolean
@@ -57,6 +64,7 @@ interface ProjectState {
   newProject: () => Promise<void>
   openProject: () => Promise<void>
   openRecentProject: (projectDir: string) => Promise<void>
+  resolveInvalidProject: (action: 'discard' | 'cancel') => Promise<void>
   saveProject: () => Promise<void>
   importFiles: () => Promise<void>
   importFromDrop: (filePaths: string[]) => Promise<void>
@@ -105,6 +113,7 @@ export const useProjectStore = create<ProjectState>()(
       return {
         project: null,
         projectDir: null,
+        invalidProject: null,
         isImporting: false,
         importingCount: 0,
         isSyncing: false,
@@ -138,12 +147,21 @@ export const useProjectStore = create<ProjectState>()(
           const filePath = await window.api.project.openDialog()
           if (!filePath) return
           try {
-            const { project, projectDir } = await window.api.project.load({
-              projectFilePath: filePath
-            })
-            set({ project, projectDir, projectError: null })
+            const result = await window.api.project.load({ projectFilePath: filePath })
+            if (result.status === 'invalid') {
+              set({
+                invalidProject: {
+                  projectFilePath: result.projectFilePath,
+                  projectDir: result.projectDir,
+                  issues: result.issues
+                },
+                projectError: null
+              })
+              return
+            }
+            set({ project: result.project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
-            await recordRecentProject(projectDir, project.name)
+            await recordRecentProject(result.projectDir, result.project.name)
           } catch (err) {
             set({ projectError: String(err) })
           }
@@ -151,14 +169,55 @@ export const useProjectStore = create<ProjectState>()(
 
         openRecentProject: async (projectDir) => {
           try {
-            const { project, projectDir: resolvedDir } = await window.api.project.openRecent({
-              projectDir
-            })
-            set({ project, projectDir: resolvedDir, projectError: null })
+            const result = await window.api.project.openRecent({ projectDir })
+            if (result.status === 'invalid') {
+              set({
+                invalidProject: {
+                  projectFilePath: result.projectFilePath,
+                  projectDir: result.projectDir,
+                  issues: result.issues
+                },
+                projectError: null
+              })
+              return
+            }
+            set({ project: result.project, projectDir: result.projectDir, projectError: null })
             useProjectStore.temporal.getState().clear()
-            await recordRecentProject(resolvedDir, project.name)
+            await recordRecentProject(result.projectDir, result.project.name)
           } catch (err) {
             set({ projectError: String(err) })
+          }
+        },
+
+        resolveInvalidProject: async (action) => {
+          const { invalidProject } = get()
+          if (!invalidProject) return
+
+          if (action === 'cancel') {
+            set({ invalidProject: null })
+            return
+          }
+
+          try {
+            const result = await window.api.project.resolveInvalid({
+              projectFilePath: invalidProject.projectFilePath,
+              projectDir: invalidProject.projectDir,
+              action: 'discard'
+            })
+            if (!result.project) {
+              set({ invalidProject: null })
+              return
+            }
+            set({
+              project: result.project,
+              projectDir: result.projectDir,
+              invalidProject: null,
+              projectError: null
+            })
+            useProjectStore.temporal.getState().clear()
+            await recordRecentProject(result.projectDir, result.project.name)
+          } catch (err) {
+            set({ invalidProject: null, projectError: String(err) })
           }
         },
 

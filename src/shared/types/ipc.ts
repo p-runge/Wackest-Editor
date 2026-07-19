@@ -7,6 +7,7 @@ export const IpcChannels = {
   projectOpenDialog: 'project:open-dialog',
   projectLoad: 'project:load',
   projectOpenRecent: 'project:open-recent',
+  projectResolveInvalid: 'project:resolve-invalid',
   ingestPickFiles: 'ingest:pick-files',
   ingestImport: 'ingest:import',
   ingestRemoveCache: 'ingest:remove-cache',
@@ -37,12 +38,35 @@ export interface ProjectLoadArgs {
   projectFilePath: string
 }
 
-export interface ProjectLoadResult {
+export interface ProjectLoadOkResult {
+  status: 'ok'
   project: Project
   projectDir: string
 }
 
+// Returned when project.json doesn't match ProjectSchema, so the renderer can offer the user a
+// choice between discarding the unmatched fields (with a timestamped backup) or cancelling.
+export interface ProjectLoadInvalidResult {
+  status: 'invalid'
+  projectDir: string
+  projectFilePath: string
+  issues: string[]
+}
+
+export type ProjectLoadResult = ProjectLoadOkResult | ProjectLoadInvalidResult
+
 export interface ProjectOpenRecentArgs {
+  projectDir: string
+}
+
+export interface ProjectResolveInvalidArgs {
+  projectFilePath: string
+  projectDir: string
+  action: 'discard' | 'cancel'
+}
+
+export interface ProjectResolveInvalidResult {
+  project: Project | null
   projectDir: string
 }
 
