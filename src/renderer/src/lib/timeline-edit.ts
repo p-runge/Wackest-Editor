@@ -8,8 +8,10 @@ export {
   mapLocalTimeToUnified,
   resolveVideoSourceId,
   resolveAudioSourceId,
-  sourceCoverageRange
+  sourceCoverageRange,
+  fillIntervalGaps
 } from '@shared/types/timeline-time'
+export type { EffectiveTrackInterval } from '@shared/types/timeline-time'
 
 /**
  * Inserts a "switch to this source from here" point, but only as far as the next already-

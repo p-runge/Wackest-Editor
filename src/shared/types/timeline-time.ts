@@ -108,6 +108,82 @@ export function resolveAudioSourceId(
   return sources.find((s) => s.probed.hasAudio && mapUnifiedTimeToLocal(s, atSec) !== null)?.id
 }
 
+export interface EffectiveTrackInterval extends TrackInterval {
+  /** True for an interval synthesized to fill a stretch left uncovered by any explicit interval
+   *  (e.g. before the first-ever camera switch, or after the timeline grew past the last one via a
+   *  later re-sync) — not a real, draggable/editable interval, just what fallback resolution would
+   *  pick there anyway. */
+  synthetic?: boolean
+}
+
+/**
+ * Fills every stretch of [0, timelineDurationSec) left uncovered by an explicit interval with a
+ * synthetic one for whichever source `resolveAt` actually resolves there — so a track-lane display
+ * built from `intervals` alone doesn't miss the leading/trailing regions that are only active via
+ * fallback (see resolveVideoSourceId/resolveAudioSourceId), which would otherwise silently disagree
+ * with the preview/export (both of which already apply that same fallback). Each gap is further
+ * split at every source's own footage boundary within it, since the fallback-resolved source can
+ * itself change partway through a gap — same reasoning as `resolveActiveAudioCoverage` below.
+ */
+export function fillIntervalGaps(
+  intervals: TrackInterval[],
+  sources: SourceClip[],
+  timelineDurationSec: number,
+  resolveAt: (atSec: number) => string | undefined
+): EffectiveTrackInterval[] {
+  if (timelineDurationSec <= 0) return intervals
+
+  const sorted = [...intervals].sort((a, b) => a.startSec - b.startSec)
+  const result: EffectiveTrackInterval[] = []
+  let cursor = 0
+
+  const fillGap = (gapEnd: number): void => {
+    if (gapEnd <= cursor) return
+    const boundaries = new Set<number>()
+    for (const source of sources) {
+      const coverage = sourceCoverageRange(source)
+      if (!coverage) continue
+      if (coverage.startSec > cursor && coverage.startSec < gapEnd)
+        boundaries.add(coverage.startSec)
+      if (coverage.endSec > cursor && coverage.endSec < gapEnd) boundaries.add(coverage.endSec)
+    }
+    const points = [cursor, ...Array.from(boundaries).sort((a, b) => a - b), gapEnd]
+    for (let i = 0; i < points.length - 1; i++) {
+      const segStart = points[i]
+      const segEnd = points[i + 1]
+      if (segEnd <= segStart) continue
+      const value = resolveAt(segStart)
+      if (!value) continue
+
+      // Merge with the previous synthetic segment if it resolved to the same source — boundary
+      // points can land a hair apart from floating-point sums (e.g. offsetSec + localEndSec) that
+      // don't exactly match `gapEnd`/`timelineDurationSec`, which would otherwise leave a sliver
+      // duplicate of the same source instead of one continuous block.
+      const previous = result[result.length - 1]
+      if (previous?.synthetic && previous.value === value && previous.endSec === segStart) {
+        previous.endSec = segEnd
+      } else {
+        result.push({
+          id: `gap-${segStart}`,
+          startSec: segStart,
+          endSec: segEnd,
+          value,
+          synthetic: true
+        })
+      }
+    }
+  }
+
+  for (const iv of sorted) {
+    fillGap(iv.startSec)
+    result.push(iv)
+    cursor = Math.max(cursor, iv.endSec)
+  }
+  fillGap(timelineDurationSec)
+
+  return result
+}
+
 /**
  * Partitions the whole unified timeline into non-overlapping segments, each attributed to
  * whichever source is the resolved active audio there (explicit `activeAudioIntervals` win,

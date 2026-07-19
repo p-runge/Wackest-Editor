@@ -1,4 +1,8 @@
-import { resolveVideoSourceId, resolveAudioSourceId } from '@shared/types/timeline-time'
+import {
+  resolveVideoSourceId,
+  resolveAudioSourceId,
+  sourceCoverageRange
+} from '@shared/types/timeline-time'
 import type { KeptRange, TrackInterval, SourceClip } from '@shared/types/project'
 
 export interface ExportSegment {
@@ -15,10 +19,16 @@ export interface AudioExportSpan {
 }
 
 /**
- * Splits each kept range at every active-video/active-audio boundary it contains, so every
- * resulting sub-segment has exactly one active video source and one active audio source —
- * matching what the preview player would show, including its same fallback source choice
- * (which always picks a source that actually has footage at that point in time).
+ * Splits each kept range at every active-video/active-audio boundary it contains — both the start
+ * AND end of each interval, plus every source's own footage boundary — so every resulting
+ * sub-segment has exactly one active video source and one active audio source, each with actual
+ * coverage for that whole sub-segment. Without the end/footage boundaries, a segment can run past
+ * the point where its resolved source's real footage ends (e.g. an explicit audio interval that
+ * outlives its source's own duration): the source-resolution fallback is only evaluated once, at
+ * the segment's start, so it would miss the switch and the segment would silently render short
+ * (each per-segment ffmpeg trim just stops at its input's EOF) — which the final `-shortest` mux
+ * then also silently truncates the whole export to match. Matches `resolveActiveAudioCoverage`'s
+ * boundary set, which the transcription path already needs this same precision for.
  */
 export function buildExportSegments(
   keptRanges: KeptRange[],
@@ -34,6 +44,19 @@ export function buildExportSegments(
     for (const iv of [...activeVideoIntervals, ...activeAudioIntervals]) {
       if (iv.startSec > range.startSec && iv.startSec < range.endSec) {
         boundaries.add(iv.startSec)
+      }
+      if (iv.endSec > range.startSec && iv.endSec < range.endSec) {
+        boundaries.add(iv.endSec)
+      }
+    }
+    for (const source of sources) {
+      const coverage = sourceCoverageRange(source)
+      if (!coverage) continue
+      if (coverage.startSec > range.startSec && coverage.startSec < range.endSec) {
+        boundaries.add(coverage.startSec)
+      }
+      if (coverage.endSec > range.startSec && coverage.endSec < range.endSec) {
+        boundaries.add(coverage.endSec)
       }
     }
     const points = [range.startSec, ...Array.from(boundaries).sort((a, b) => a - b), range.endSec]

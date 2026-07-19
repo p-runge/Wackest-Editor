@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SourceClip, TrackInterval } from '@shared/types/project'
-import { sourceCoverageRange } from '../../lib/timeline-edit'
+import { sourceCoverageRange, type EffectiveTrackInterval } from '../../lib/timeline-edit'
 import WaveformCanvas from './WaveformCanvas'
 import { SOURCE_LANE_HEIGHT_PX } from './constants'
 
@@ -9,9 +9,12 @@ interface SourceLaneTrackProps {
   pixelsPerSecond: number
   trackWidthPx: number
   color: string
-  /** Full activeVideoIntervals / activeAudioIntervals array, so this lane can show exactly the
-   *  sub-ranges where it is the active source, and find its shared boundaries with neighbors. */
-  activeIntervals: TrackInterval[]
+  /** Full activeVideoIntervals / activeAudioIntervals array, gap-filled with synthetic intervals
+   *  (see `fillIntervalGaps`) so this lane shows exactly the sub-ranges where it is the active
+   *  source — including stretches only active via fallback — and can find its shared boundaries
+   *  with neighbors. Synthetic intervals aren't draggable, since there's no real interval behind
+   *  them yet. */
+  activeIntervals: EffectiveTrackInterval[]
   /** All sources in this section (video or audio), so a dragged boundary's bounds can be looked
    *  up for whichever neighbor source actually owns each side of it. */
   sources: SourceClip[]
@@ -137,15 +140,20 @@ function SourceLaneTrack({
               width: Math.max(1, (displayEnd - displayStart) * pixelsPerSecond),
               backgroundColor: color
             }}
-            title={`Aktiv (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`}
+            title={
+              iv.synthetic
+                ? `Aktiv, automatisch (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`
+                : `Aktiv (${iv.startSec.toFixed(1)}s–${iv.endSec.toFixed(1)}s)`
+            }
           />
         )
       })}
 
       {ownBlocks.flatMap(({ iv, index }) => {
         const handles: React.JSX.Element[] = []
+        if (iv.synthetic) return handles // no real interval behind it yet — nothing to drag
         const leftNeighbor = sorted[index - 1]
-        if (leftNeighbor && leftNeighbor.endSec === iv.startSec) {
+        if (leftNeighbor && !leftNeighbor.synthetic && leftNeighbor.endSec === iv.startSec) {
           const boundarySec =
             drag && drag.leftIntervalId === leftNeighbor.id ? drag.atSec : iv.startSec
           handles.push(
@@ -162,7 +170,7 @@ function SourceLaneTrack({
           )
         }
         const rightNeighbor = sorted[index + 1]
-        if (rightNeighbor && rightNeighbor.startSec === iv.endSec) {
+        if (rightNeighbor && !rightNeighbor.synthetic && rightNeighbor.startSec === iv.endSec) {
           const boundarySec = drag && drag.leftIntervalId === iv.id ? drag.atSec : iv.endSec
           handles.push(
             <div

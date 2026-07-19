@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Film, Mic, SwitchCamera, Upload, ZoomIn } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
@@ -12,7 +12,12 @@ import PreviewPlayer from './PreviewPlayer'
 import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
 import { colorForSourceId } from '../../lib/colors'
-import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
+import {
+  mapUnifiedTimeToLocal,
+  resolveVideoSourceId,
+  resolveAudioSourceId,
+  fillIntervalGaps
+} from '../../lib/timeline-edit'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import {
   BOTTOM_SPACER_PX,
@@ -77,6 +82,35 @@ function TimelineEditor(): React.JSX.Element | null {
   const seek = usePlaybackStore((state) => state.seek)
 
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
+
+  // Gap-filled so the per-source lanes below highlight exactly the same active ranges the preview
+  // shows via useResolvedSources — including stretches that are active only through fallback (e.g.
+  // before the first-ever camera switch, or after a re-sync grew the timeline past the last one).
+  const effectiveVideoIntervals = useMemo(() => {
+    if (!project) return []
+    return fillIntervalGaps(
+      project.edit.activeVideoIntervals,
+      project.sources,
+      project.timelineDurationSec,
+      (atSec) => resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, atSec)
+    )
+  }, [project])
+
+  const effectiveAudioIntervals = useMemo(() => {
+    if (!project) return []
+    return fillIntervalGaps(
+      project.edit.activeAudioIntervals,
+      project.sources,
+      project.timelineDurationSec,
+      (atSec) =>
+        resolveAudioSourceId(
+          project.edit.activeAudioIntervals,
+          project.sources,
+          atSec,
+          resolveVideoSourceId(project.edit.activeVideoIntervals, project.sources, atSec)
+        )
+    )
+  }, [project])
 
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
   const bodyScrollRef = useRef<HTMLDivElement>(null)
@@ -341,7 +375,7 @@ function TimelineEditor(): React.JSX.Element | null {
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
                     color={colorForSourceId(source.id, sourceIds)}
-                    activeIntervals={project.edit.activeVideoIntervals}
+                    activeIntervals={effectiveVideoIntervals}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
                     onWaveformClick={(atSec) => void setActiveVideoAt(atSec, source.id)}
@@ -359,7 +393,7 @@ function TimelineEditor(): React.JSX.Element | null {
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
                     color={colorForSourceId(source.id, sourceIds)}
-                    activeIntervals={project.edit.activeAudioIntervals}
+                    activeIntervals={effectiveAudioIntervals}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
                     onWaveformClick={(atSec) => void setActiveAudioAt(atSec, source.id)}
