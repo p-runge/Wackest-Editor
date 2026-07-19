@@ -44,7 +44,7 @@ function StartScreen(): React.JSX.Element {
 
       <div className="w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center">
-          <img src={logo} alt="Wackest Editor" className="mb-4 size-14 rounded-2xl object-cover" />
+          <img src={logo} alt="Wackest Editor" className="mb-4 size-24 rounded-2xl object-cover" />
           <h1 className="text-2xl font-semibold">Wackest Editor</h1>
           <p className="mt-2 max-w-sm text-sm text-muted-foreground">
             Highlight-Videos per Fingerschnipp
