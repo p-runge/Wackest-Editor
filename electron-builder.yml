@@ -32,4 +32,12 @@ mac:
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
+linux:
+  executableName: wackest-editor
+  target:
+    - target: AppImage
+      arch:
+        - x64
+appImage:
+  artifactName: ${name}-${version}.${ext}
 npmRebuild: false
