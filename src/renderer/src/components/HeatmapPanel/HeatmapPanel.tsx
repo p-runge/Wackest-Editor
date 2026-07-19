@@ -16,6 +16,17 @@ function formatTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function providerExplanationFor(provider: HeatmapProviderId): string {
+  switch (provider) {
+    case 'heuristic-local':
+      return 'Wertet Lautstärke, Sprechtempo und Ausrufe/Fragen im Transkript aus und kombiniert sie zu einem Score – läuft lokal, ohne API-Aufruf.'
+    case 'llm-claude':
+      return 'Schickt das Transkript abschnittsweise an die Claude API, die Inhalte wie spannende Aussagen, Emotionen oder Wendepunkte erkennt und bewertet.'
+    case 'llm-openai':
+      return 'Schickt das Transkript abschnittsweise an die OpenAI API, die Inhalte wie spannende Aussagen, Emotionen oder Wendepunkte erkennt und bewertet.'
+  }
+}
+
 function missingSettingFor(
   provider: HeatmapProviderId,
   settings: { openaiApiKey?: string; anthropicApiKey?: string }
@@ -79,6 +90,9 @@ function HeatmapPanel(): React.JSX.Element | null {
             <SelectItem value="llm-openai">OpenAI API</SelectItem>
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">
+          {providerExplanationFor(project.providerConfig.heatmap.provider)}
+        </p>
         {missingSetting && (
           <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-warning">
             {missingSetting.message}
