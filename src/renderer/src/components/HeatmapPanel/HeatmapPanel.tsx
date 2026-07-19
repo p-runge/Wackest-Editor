@@ -4,10 +4,12 @@ import { useSettingsStore } from '../../state/settings-store'
 import { useSettingsUIStore } from '../../state/settings-ui-store'
 import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
 import { colorForScore } from '../../lib/colors'
+import { findHeatmapPeakIndices } from '../../lib/heatmap'
 import type { HeatmapProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 
 function formatTime(sec: number): string {
   const total = Math.max(0, Math.round(sec))
@@ -66,6 +68,7 @@ function HeatmapPanel(): React.JSX.Element | null {
   }
 
   const duration = project.timelineDurationSec || 1
+  const peakIndices = findHeatmapPeakIndices(project.heatmap)
   const missingSetting = missingSettingFor(project.providerConfig.heatmap.provider, settings)
   const errorFieldId = error ? settingsFieldIdForErrorMessage(error) : null
 
@@ -139,18 +142,43 @@ function HeatmapPanel(): React.JSX.Element | null {
         </p>
       ) : (
         <>
-          <div className="flex h-6 w-full overflow-hidden rounded-md border border-border">
-            {project.heatmap.map((point, i) => (
-              <div
-                key={i}
-                style={{
-                  width: `${((point.endSec - point.startSec) / duration) * 100}%`,
-                  backgroundColor: colorForScore(point.score)
-                }}
-                title={`${formatTime(point.startSec)}–${formatTime(point.endSec)} · Score ${point.score.toFixed(2)}${point.reason ? `\n${point.reason}` : ''}`}
-              />
-            ))}
-          </div>
+          <TooltipProvider delayDuration={150}>
+            <div className="flex h-6 w-full overflow-hidden rounded-md border border-border">
+              {project.heatmap.map((point, i) => {
+                const isPeak = peakIndices.has(i)
+                return (
+                  <div
+                    key={i}
+                    className="relative"
+                    style={{
+                      width: `${((point.endSec - point.startSec) / duration) * 100}%`,
+                      backgroundColor: colorForScore(point.score)
+                    }}
+                    title={
+                      isPeak
+                        ? undefined
+                        : `${formatTime(point.startSec)}–${formatTime(point.endSec)} · Score ${point.score.toFixed(2)}`
+                    }
+                  >
+                    {isPeak && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="absolute inset-x-0 top-0.5 mx-auto h-1.5 w-1.5 cursor-help rounded-full border border-black/40 bg-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="font-medium">
+                            {formatTime(point.startSec)}–{formatTime(point.endSec)} · Score{' '}
+                            {point.score.toFixed(2)}
+                          </p>
+                          <p className="text-muted-foreground">{point.reason}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </TooltipProvider>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>niedrig</span>
             <div
