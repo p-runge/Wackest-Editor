@@ -13,8 +13,8 @@ function confidenceBadge(
   if (method === 'no-overlap-gap') {
     return { text: 'kein Overlap – Lücke eingefügt', variant: 'destructive' }
   }
-  if (confidence >= 0.02) return { text: 'hoch', variant: 'success' }
-  if (confidence >= 0.005) return { text: 'mittel', variant: 'secondary' }
+  if (confidence >= 0.3) return { text: 'hoch', variant: 'success' }
+  if (confidence >= 0.15) return { text: 'mittel', variant: 'secondary' }
   return { text: 'niedrig – bitte prüfen', variant: 'destructive' }
 }
 
