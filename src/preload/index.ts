@@ -21,6 +21,7 @@ import type {
   HeatmapRunArgs,
   HeatmapRunResult,
   HeatmapProgressEvent,
+  ExportChooseOutputArgs,
   ExportRunArgs,
   ExportProgressEvent,
   SettingsGetResult,
@@ -79,7 +80,8 @@ const api = {
     }
   },
   export: {
-    chooseOutput: (): Promise<string | null> => ipcRenderer.invoke(IpcChannels.exportChooseOutput),
+    chooseOutput: (args: ExportChooseOutputArgs): Promise<string | null> =>
+      ipcRenderer.invoke(IpcChannels.exportChooseOutput, args),
     run: (args: ExportRunArgs): Promise<void> => ipcRenderer.invoke(IpcChannels.exportRun, args),
     onProgress: (callback: (update: ExportProgressEvent) => void): (() => void) => {
       const listener = (_event: unknown, update: ExportProgressEvent): void => callback(update)

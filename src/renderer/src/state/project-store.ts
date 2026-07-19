@@ -500,7 +500,7 @@ export const useProjectStore = create<ProjectState>()(
           const { project } = get()
           if (!project) return
 
-          const outputPath = await window.api.export.chooseOutput()
+          const outputPath = await window.api.export.chooseOutput({ defaultName: project.name })
           if (!outputPath) return
 
           set({ isExporting: true, exportError: null, exportProgress: null, lastExportPath: null })

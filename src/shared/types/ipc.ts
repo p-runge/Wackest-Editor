@@ -121,6 +121,10 @@ export interface HeatmapProgressEvent {
   progress: number
 }
 
+export interface ExportChooseOutputArgs {
+  defaultName: string
+}
+
 export interface ExportRunArgs {
   project: Project
   outputPath: string
