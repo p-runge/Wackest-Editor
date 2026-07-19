@@ -1,10 +1,11 @@
 import { useStore } from 'zustand'
-import { Clapperboard, FolderOpen, FolderPlus, Redo2, Undo2 } from 'lucide-react'
+import { FolderOpen, FolderPlus, Redo2, Undo2 } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { Button } from '../ui/button'
 import { Separator } from '../ui/separator'
 import { modKeyLabel } from '../../lib/platform'
 import SettingsPanel from '../SettingsPanel/SettingsPanel'
+import logo from '../../assets/logo.png'
 
 function TopBar(): React.JSX.Element {
   const projectName = useProjectStore((state) => state.project?.name)
@@ -15,7 +16,7 @@ function TopBar(): React.JSX.Element {
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
       <div className="flex items-center gap-2 text-sm font-semibold">
-        <Clapperboard className="size-4 text-primary" />
+        <img src={logo} alt="Wackest Tool" className="size-5 rounded-md object-cover" />
         <span className="hidden sm:inline">Wackest Tool</span>
       </div>
       {projectName && (

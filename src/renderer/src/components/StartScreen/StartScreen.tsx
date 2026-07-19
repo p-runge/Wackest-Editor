@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { FolderOpen, FolderPlus, Clapperboard, X } from 'lucide-react'
+import { FolderOpen, FolderPlus, X } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { Button } from '../ui/button'
 import SettingsPanel from '../SettingsPanel/SettingsPanel'
+import logo from '../../assets/logo.png'
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -43,9 +44,7 @@ function StartScreen(): React.JSX.Element {
 
       <div className="w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
-            <Clapperboard className="size-7" />
-          </div>
+          <img src={logo} alt="Wackest Tool" className="mb-4 size-14 rounded-2xl object-cover" />
           <h1 className="text-2xl font-semibold">Wackest Tool</h1>
           <p className="mt-2 max-w-sm text-sm text-muted-foreground">
             Highlight-Videos per Fingerschnipp
