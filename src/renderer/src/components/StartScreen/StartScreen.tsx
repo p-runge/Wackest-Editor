@@ -3,6 +3,7 @@ import { FolderOpen, FolderPlus, Clapperboard, X } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { Button } from '../ui/button'
+import SettingsPanel from '../SettingsPanel/SettingsPanel'
 
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime()
@@ -35,7 +36,11 @@ function StartScreen(): React.JSX.Element {
   const recentProjects = settings.recentProjects ?? []
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-y-auto p-8">
+    <div className="relative flex h-full w-full items-center justify-center overflow-y-auto p-8">
+      <div className="absolute right-4 top-4">
+        <SettingsPanel />
+      </div>
+
       <div className="w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
@@ -43,7 +48,7 @@ function StartScreen(): React.JSX.Element {
           </div>
           <h1 className="text-2xl font-semibold">Wackest Tool</h1>
           <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            Multicam-Schnittwerkzeug: Sync, Untertitel, Highlight-Heatmap, manueller Schnitt.
+            Highlight-Videos per Fingerschnipp
           </p>
         </div>
 

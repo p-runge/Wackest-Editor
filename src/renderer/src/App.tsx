@@ -54,28 +54,30 @@ function App(): React.JSX.Element {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <TopBar />
       {!project ? (
         <StartScreen />
       ) : (
-        <div
-          className="relative flex min-h-0 min-w-0 flex-1"
-          onDragEnter={handleDragEnter}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <ToolSidebar />
-          <div className="min-h-0 min-w-0 flex-1">
-            <TimelineEditor />
-          </div>
-
-          {isDraggingOver && (
-            <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
-              Dateien hier ablegen
+        <>
+          <TopBar />
+          <div
+            className="relative flex min-h-0 min-w-0 flex-1"
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <ToolSidebar />
+            <div className="min-h-0 min-w-0 flex-1">
+              <TimelineEditor />
             </div>
-          )}
-        </div>
+
+            {isDraggingOver && (
+              <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm font-medium text-primary">
+                Dateien hier ablegen
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
