@@ -3,12 +3,9 @@ import { useProjectStore } from '../../state/project-store'
 import { usePlaybackStore } from '../../state/playback-store'
 import {
   mapUnifiedTimeToLocal,
-  mapLocalTimeToUnified,
   mapPlacementTimeToContentTime,
-  mapContentTimeToPlacementTime,
   computeProgramEndSec
 } from '../../lib/timeline-edit'
-import { sourceCoverageRange } from '@shared/types/timeline-time'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { RESYNC_THRESHOLD_SEC } from '../../lib/playback'
 import { toMediaUrl } from '@shared/types/media-url'
@@ -37,53 +34,14 @@ function PreviewPlayer(): React.JSX.Element | null {
       ? project?.sources.find((s) => s.id === activeAudioId)
       : undefined
 
+  // playheadSec (program/placement axis) is always driven from here, never derived back from a
+  // playing media element's own clock — that round trip (local time -> content time -> placement
+  // time, searching every kept range) was ambiguous enough at chunk boundaries to make playback
+  // ping-pong between two points after moving/swapping chunks. A single real-time rAF loop is the
+  // one source of truth for "where we are", so playback is always strictly linear from 0s to the
+  // program end, regardless of whether a source happens to be active at any given instant.
   useEffect(() => {
-    const video = videoRef.current
-    if (!video || !videoSource || contentSec === null) return
-    const localTime = mapUnifiedTimeToLocal(videoSource, contentSec)
-    if (localTime === null) return
-    if (Math.abs(video.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
-      video.currentTime = localTime
-    }
-  }, [contentSec, videoSource])
-
-  useEffect(() => {
-    const audio = audioRef.current
-    if (!audio || !audioSource || contentSec === null) return
-    const localTime = mapUnifiedTimeToLocal(audioSource, contentSec)
-    if (localTime === null) return
-    if (Math.abs(audio.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
-      audio.currentTime = localTime
-    }
-  }, [contentSec, audioSource])
-
-  useEffect(() => {
-    if (isPlaying) {
-      videoRef.current?.play().catch(() => {})
-      audioRef.current?.play().catch(() => {})
-    } else {
-      videoRef.current?.pause()
-      audioRef.current?.pause()
-    }
-  }, [isPlaying, videoSource, audioSource])
-
-  // Interval bounds are exclusive at their end, so the exact last instant of the program (the
-  // last chunk's placement end — 0 when the timeline is empty) resolves no active source at all:
-  // the <video>/<audio> elements unmount right before their native "ended" event would fire,
-  // which would otherwise leave isPlaying stuck true with nothing left to drive it forward.
-  // Force a clean stop once the playhead truly reaches the program end.
-  useEffect(() => {
-    if (isPlaying && project && playheadSec >= computeProgramEndSec(project.edit.keptRanges)) {
-      pause()
-    }
-  }, [isPlaying, playheadSec, project, pause])
-
-  // Playback runs strictly linearly along the whole program timeline — no skipping. When a stretch
-  // has no active source (a cut/empty region, or a moment between two sources), nothing left to
-  // drive the playhead forward, so advance it at real time via rAF until a source picks up again or
-  // the program ends. The media elements drive whenever a source IS active (see handleTimeUpdate).
-  useEffect(() => {
-    if (!isPlaying || !project || videoSource || audioSource) return
+    if (!isPlaying || !project) return
     const end = computeProgramEndSec(project.edit.keptRanges)
     let raf = 0
     let last = performance.now()
@@ -102,44 +60,50 @@ function PreviewPlayer(): React.JSX.Element | null {
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
-  }, [isPlaying, videoSource, audioSource, project, seek, pause])
+  }, [isPlaying, project, seek, pause])
 
-  // The active source's footage is exhausted (its file ended, or its content is cut out here).
-  // Hand off to whatever source comes next by moving the playhead just past this source's own
-  // coverage end — staying linear on the program timeline, never jumping ahead to another chunk.
-  const continueAfterSource = (): void => {
-    if (!videoSource || !project) return
-    const end = computeProgramEndSec(project.edit.keptRanges)
-    const coverage = sourceCoverageRange(videoSource)
-    const placement = coverage
-      ? mapContentTimeToPlacementTime(project.edit.keptRanges, coverage.endSec)
-      : null
-    if (placement !== null && placement > playheadSec) {
-      seek(Math.min(placement, end))
-    } else {
-      // Nothing kept maps just past this source — nudge on so the gap loop / end-stop take over.
-      seek(Math.min(playheadSec + 0.05, end))
-    }
-  }
-
-  const handleTimeUpdate = (): void => {
-    if (!isPlaying || !videoSource || !project) return
+  // Video/audio elements are pure followers of the rAF-driven playheadSec above: nudged back in
+  // line whenever they've drifted from their target local time by more than the resync threshold,
+  // never treated as the driver themselves. Both derive from the same contentSec, so they can never
+  // disagree about which instant they should be showing/playing — fixes stale/wrong audio that
+  // used to linger when it was only corrected against a video-clock-derived time.
+  useEffect(() => {
     const video = videoRef.current
-    if (!video) return
-    const contentUnified = mapLocalTimeToUnified(videoSource, video.currentTime)
-    if (contentUnified !== null) {
-      const placement = mapContentTimeToPlacementTime(project.edit.keptRanges, contentUnified)
-      if (placement !== null) {
-        seek(placement)
-        return
-      }
+    if (!video || !videoSource || contentSec === null) return
+    const localTime = mapUnifiedTimeToLocal(videoSource, contentSec)
+    if (localTime === null) {
+      video.pause()
+      return
     }
-    continueAfterSource()
-  }
+    if (Math.abs(video.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
+      video.currentTime = localTime
+    }
+    if (isPlaying && video.paused) video.play().catch(() => {})
+  }, [contentSec, videoSource, isPlaying])
 
-  const handleEnded = (): void => {
-    continueAfterSource()
-  }
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !audioSource || contentSec === null) return
+    const localTime = mapUnifiedTimeToLocal(audioSource, contentSec)
+    if (localTime === null) {
+      audio.pause()
+      return
+    }
+    if (Math.abs(audio.currentTime - localTime) > RESYNC_THRESHOLD_SEC) {
+      audio.currentTime = localTime
+    }
+    if (isPlaying && audio.paused) audio.play().catch(() => {})
+  }, [contentSec, audioSource, isPlaying])
+
+  useEffect(() => {
+    if (isPlaying) {
+      videoRef.current?.play().catch(() => {})
+      audioRef.current?.play().catch(() => {})
+    } else {
+      videoRef.current?.pause()
+      audioRef.current?.pause()
+    }
+  }, [isPlaying, videoSource, audioSource])
 
   if (!project) return null
 
@@ -170,8 +134,6 @@ function PreviewPlayer(): React.JSX.Element | null {
         className="preview-player__video"
         src={toMediaUrl(videoSource.originalFilePath)}
         muted={!!audioSource}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
       />
       {audioSource && (
         <audio key={audioSource.id} ref={audioRef} src={toMediaUrl(audioSource.originalFilePath)} />
