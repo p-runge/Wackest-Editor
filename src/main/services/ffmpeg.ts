@@ -163,6 +163,8 @@ export interface RenderVideoSegmentInput {
   durationSec: number
   targetWidth: number
   targetHeight: number
+  /** Uniform output frame rate for ALL segments — see renderExportVideoSegment. */
+  targetFps: number
   outputPath: string
   onProgress?: (fractionDone: number) => void
 }
@@ -176,6 +178,12 @@ export interface RenderVideoSegmentInput {
  * audio source actually changes, then muxed back together at the end — re-encoding audio once per
  * video cut instead would add an audible click at every cut from each independent encode's priming
  * samples, even when the audio source and offset are continuous across that cut.
+ *
+ * A UNIFORM constant frame rate (`-r` + `-fps_mode cfr`) and pixel format are forced on every
+ * segment. `concatSegments` joins them with stream-copy, which silently produces a too-short result
+ * when segments have mismatched frame rates/timebases (e.g. a 25fps phone clip after 30fps camera
+ * segments) — the shorter total then gets truncated further by the muxer's `-shortest`. Normalizing
+ * the frame rate here makes the concat exact.
  */
 export function renderExportVideoSegment(input: RenderVideoSegmentInput): Promise<void> {
   const scaleFilter =
@@ -192,6 +200,12 @@ export function renderExportVideoSegment(input: RenderVideoSegmentInput): Promis
         '-an',
         '-vf',
         scaleFilter,
+        '-r',
+        String(input.targetFps),
+        '-fps_mode',
+        'cfr',
+        '-pix_fmt',
+        'yuv420p',
         '-c:v',
         'libx264',
         '-preset',

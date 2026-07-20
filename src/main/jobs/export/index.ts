@@ -6,7 +6,8 @@ import {
   renderExportVideoSegment,
   renderExportAudioSegment,
   muxVideoAudio,
-  concatSegments
+  concatSegments,
+  probeFile
 } from '../../services/ffmpeg'
 import { mapUnifiedTimeToLocal } from '@shared/types/timeline-time'
 import type { Project, SourceClip } from '@shared/types/project'
@@ -18,15 +19,24 @@ export interface ExportProgressUpdate {
   progress: number
 }
 
-function resolveTargetResolution(sources: SourceClip[]): { width: number; height: number } {
+function resolveTargetOutput(sources: SourceClip[]): {
+  width: number
+  height: number
+  fps: number
+} {
   const mainSource = sources.find((s) => s.role === 'main' && s.probed.hasVideo)
   const source = mainSource ?? sources.find((s) => s.probed.hasVideo)
   const width = source?.probed.width ?? 1920
   const height = source?.probed.height ?? 1080
+  // A single uniform output fps for every segment so stream-copy concat stays exact (mixed frame
+  // rates otherwise truncate the concat — see renderExportVideoSegment). Rounded, sane fallback.
+  const rawFps = source?.probed.frameRate
+  const fps = rawFps && rawFps > 0 ? Math.min(60, Math.max(24, Math.round(rawFps))) : 30
   // libx264 (yuv420p) requires even dimensions
   return {
     width: width % 2 === 0 ? width : width + 1,
-    height: height % 2 === 0 ? height : height + 1
+    height: height % 2 === 0 ? height : height + 1,
+    fps
   }
 }
 
@@ -49,7 +59,7 @@ export async function runExportForProject(
   }
 
   const audioSpans = groupAudioSpans(segments)
-  const { width, height } = resolveTargetResolution(project.sources)
+  const { width, height, fps } = resolveTargetOutput(project.sources)
   const workDir = await mkdtemp(join(tmpdir(), 'wackest-export-'))
 
   // Video is re-encoded per camera cut; audio is re-encoded only per continuous active-audio span
@@ -80,6 +90,7 @@ export async function runExportForProject(
         durationSec: segment.unifiedEndSec - segment.unifiedStartSec,
         targetWidth: width,
         targetHeight: height,
+        targetFps: fps,
         outputPath: segmentPath,
         onProgress: (fraction) =>
           onProgress?.({
@@ -133,6 +144,23 @@ export async function runExportForProject(
 
     onProgress?.({ stage: 'muxing', progress: CONCAT_PHASE_END })
     await muxVideoAudio(concatVideoPath, concatAudioPath, outputPath)
+
+    // Safety net against silent truncation (a mismatched-codec concat, or the muxer's `-shortest`
+    // clipping to a too-short stream): the output must be ~as long as the sum of the exported
+    // segments. Fail loudly instead of leaving the user with a quietly-shortened file.
+    const expectedSec = segments.reduce(
+      (s, seg) => s + (seg.unifiedEndSec - seg.unifiedStartSec),
+      0
+    )
+    const probed = await probeFile(outputPath)
+    if (probed.durationSec < expectedSec - 1.0) {
+      throw new Error(
+        `Export unvollständig: ${probed.durationSec.toFixed(1)}s statt erwarteter ` +
+          `${expectedSec.toFixed(1)}s. Ein Clip wurde nicht vollständig exportiert — bitte Sync ` +
+          `prüfen und erneut exportieren.`
+      )
+    }
+
     onProgress?.({ stage: 'done', progress: 1 })
   } finally {
     await rm(workDir, { recursive: true, force: true })
