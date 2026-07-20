@@ -104,10 +104,10 @@ const api = {
     copyToClipboard: (text: string): void => clipboard.writeText(text)
   },
   menu: {
-    // On macOS, Cmd+Z/Cmd+Shift+Z are intercepted at the native Cocoa level (the standard
-    // undo:/redo: responder actions) before a keydown ever reaches the renderer's DOM — so
-    // these can only be observed via an application-menu accelerator pushed over IPC, not a
-    // window 'keydown' listener.
+    // On macOS, Cmd+Z/Cmd+Shift+Z/Cmd+A are intercepted at the native Cocoa level (the standard
+    // undo:/redo:/selectAll: responder actions) before a keydown ever reaches the renderer's
+    // DOM — so these can only be observed via an application-menu accelerator pushed over IPC,
+    // not a window 'keydown' listener.
     onUndo: (callback: () => void): (() => void) => {
       const listener = (): void => callback()
       ipcRenderer.on(IpcChannels.menuUndo, listener)
@@ -117,6 +117,11 @@ const api = {
       const listener = (): void => callback()
       ipcRenderer.on(IpcChannels.menuRedo, listener)
       return () => ipcRenderer.removeListener(IpcChannels.menuRedo, listener)
+    },
+    onSelectAll: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on(IpcChannels.menuSelectAll, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.menuSelectAll, listener)
     }
   }
 }

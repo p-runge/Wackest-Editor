@@ -9,13 +9,19 @@ interface CutToolProps {
   playheadSec: number
   splitKeptRangeAtPlayhead: (atSec: number) => Promise<void>
   deleteKeptRange: (id: string) => Promise<void>
+  selectedRangeIds: Set<string>
+  deleteKeptRanges: (ids: Set<string>) => Promise<void>
+  onSelectAllRanges: () => void
 }
 
 function CutTool({
   project,
   playheadSec,
   splitKeptRangeAtPlayhead,
-  deleteKeptRange
+  deleteKeptRange,
+  selectedRangeIds,
+  deleteKeptRanges,
+  onSelectAllRanges
 }: CutToolProps): React.JSX.Element {
   const rangeAtPlayhead = findKeptRangeAt(project.edit.keptRanges, playheadSec)
 
@@ -23,9 +29,12 @@ function CutTool({
     void splitKeptRangeAtPlayhead(playheadSec)
   }, [playheadSec, splitKeptRangeAtPlayhead])
 
+  // A non-empty selection takes priority over the playhead-based single delete — once you've
+  // selected several chunks, Backspace/Entf and the trash icon should act on all of them.
   const handleDelete = useCallback((): void => {
-    if (rangeAtPlayhead) void deleteKeptRange(rangeAtPlayhead.id)
-  }, [rangeAtPlayhead, deleteKeptRange])
+    if (selectedRangeIds.size > 0) void deleteKeptRanges(selectedRangeIds)
+    else if (rangeAtPlayhead) void deleteKeptRange(rangeAtPlayhead.id)
+  }, [selectedRangeIds, deleteKeptRanges, rangeAtPlayhead, deleteKeptRange])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
@@ -42,6 +51,18 @@ function CutTool({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleSplit, handleDelete])
+
+  // Cmd/Ctrl+A is a standard Cocoa/Chromium responder action intercepted before any keydown DOM
+  // event reaches the renderer, so it can only be observed via the application-menu accelerator
+  // forwarded over IPC (see main/index.ts and preload's `menu.onSelectAll`) — same reasoning as
+  // undo/redo. Only mounted while the Cut tool is active, so Cmd/Ctrl+A elsewhere is a no-op here
+  // (the text-field select-all fallback lives in useGlobalShortcuts instead, always mounted).
+  useEffect(() => {
+    return window.api.menu.onSelectAll(() => {
+      if (isTypingTarget(document.activeElement)) return
+      onSelectAllRanges()
+    })
+  }, [onSelectAllRanges])
 
   return (
     <div className="flex flex-col gap-2 p-2.5">
@@ -71,8 +92,14 @@ function CutTool({
         <button
           type="button"
           onClick={handleDelete}
-          disabled={!rangeAtPlayhead}
-          title="Segment am Abspielkopf löschen (Entf)"
+          disabled={selectedRangeIds.size === 0 && !rangeAtPlayhead}
+          title={
+            selectedRangeIds.size > 1
+              ? `${selectedRangeIds.size} ausgewählte Abschnitte löschen (Entf)`
+              : selectedRangeIds.size === 1
+                ? 'Ausgewählten Abschnitt löschen (Entf)'
+                : 'Segment am Abspielkopf löschen (Entf)'
+          }
           className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border/80 bg-background/60 px-2 py-1.5 text-xs text-foreground/90 transition-colors hover:border-border hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
         >
           <Scissors className="size-3.5" />
@@ -86,6 +113,10 @@ function CutTool({
         seine Position auf der Zeitleiste bestimmt, wann er abgespielt/exportiert wird. Ziehen auf
         leerem Bereich schneidet den markierten Bereich heraus; Papierkorb oder Entf löscht einen
         Abschnitt ganz (leerer Bereich bleibt). Rückgängig mit Cmd/Strg+Z.
+        <br />
+        Mehrfachauswahl: Cmd/Strg-Klick togglet einen Abschnitt, Shift-Klick wählt einen Bereich,
+        Shift-Ziehen auf leerem Bereich zieht einen Auswahlrahmen, Cmd/Strg+A wählt alle.
+        Ausgewählte Abschnitte werden gemeinsam verschoben oder gelöscht.
       </p>
     </div>
   )

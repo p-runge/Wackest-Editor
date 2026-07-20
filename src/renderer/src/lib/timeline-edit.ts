@@ -225,6 +225,12 @@ export function deleteKeptRangeById(keptRanges: KeptRange[], id: string): KeptRa
   return keptRanges.filter((r) => r.id !== id)
 }
 
+/** Same as `deleteKeptRangeById`, for a whole selection at once — one array transform, so
+ *  callers can commit it as a single store update (one undo step) instead of one per id. */
+export function deleteKeptRangesByIds(keptRanges: KeptRange[], ids: Set<string>): KeptRange[] {
+  return keptRanges.filter((r) => !ids.has(r.id))
+}
+
 /** Where the program actually ends: the furthest placement end of any kept chunk, 0 when the
  *  timeline is empty. This — not `timelineDurationSec` (a content-axis quantity: how much raw
  *  synced footage exists) — is what the duration display, playback end, and End-key target use;
@@ -310,6 +316,62 @@ export function resolveMovePlacement(
     cursor = startSec + (rangeInSequence.endSec - rangeInSequence.startSec)
   }
   return finish(sequence.map((r, i) => withPlacement(r, starts[i])))
+}
+
+/**
+ * Group version of `resolveMovePlacement`: drags every chunk in `selectedIds` together as a
+ * rigid block (same delta applied to each, so their relative offsets — and any gaps between
+ * them — are preserved exactly), based on where the dragged `leaderId` chunk is proposed to
+ * land. Non-selected chunks are cascaded rightward out of the way exactly like a single-chunk
+ * move, never overwritten.
+ *
+ * Unlike `resolveMovePlacement`, there's only one code path here (no separate "free movement"
+ * branch): a plain cursor-cascade over every chunk's *desired* start, sorted, already reproduces
+ * the free-movement result whenever there's room — pushing only ever clamps a desired start
+ * upward to the cursor, which is a no-op when the gap already fits. That equivalence is what
+ * lets a single pass cover both the "moves freely" and "pushes neighbors aside" cases for an
+ * arbitrarily-sized group, where tracking one gap per selected chunk would otherwise be needed.
+ */
+export function resolveGroupMovePlacement(
+  keptRanges: KeptRange[],
+  selectedIds: Set<string>,
+  leaderId: string,
+  proposedLeaderStartSec: number
+): KeptRange[] {
+  const leader = keptRanges.find((r) => r.id === leaderId)
+  if (!leader || !selectedIds.has(leaderId)) return keptRanges
+
+  const selected = keptRanges.filter((r) => selectedIds.has(r.id))
+  const others = keptRanges.filter((r) => !selectedIds.has(r.id))
+
+  let delta = proposedLeaderStartSec - leader.startSec
+  const minOriginalStart = Math.min(...selected.map((r) => r.startSec))
+  delta = Math.max(delta, -minOriginalStart)
+
+  const desiredStartById = new Map<string, number>()
+  for (const r of selected) desiredStartById.set(r.id, r.startSec + delta)
+  for (const r of others) desiredStartById.set(r.id, r.startSec)
+
+  const sequence = [...keptRanges].sort(
+    (a, b) =>
+      (desiredStartById.get(a.id) ?? a.startSec) - (desiredStartById.get(b.id) ?? b.startSec)
+  )
+
+  let cursor = 0
+  const starts: number[] = []
+  for (const range of sequence) {
+    const desired = desiredStartById.get(range.id) ?? range.startSec
+    const startSec = Math.max(desired, cursor)
+    starts.push(startSec)
+    cursor = startSec + (range.endSec - range.startSec)
+  }
+  const result = sequence.map((r, i) => withPlacement(r, starts[i]))
+
+  const unchanged = result.every((r) => {
+    const before = keptRanges.find((k) => k.id === r.id)
+    return before !== undefined && before.startSec === r.startSec
+  })
+  return unchanged ? keptRanges : result
 }
 
 /**

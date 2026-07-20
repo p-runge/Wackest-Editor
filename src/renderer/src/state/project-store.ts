@@ -24,7 +24,9 @@ import {
   splitKeptRangeAt,
   removeKeptRange,
   deleteKeptRangeById,
-  resolveMovePlacement
+  deleteKeptRangesByIds,
+  resolveMovePlacement,
+  resolveGroupMovePlacement
 } from '../lib/timeline-edit'
 import { computeAutoVideoIntervals } from '../lib/auto-switch'
 import { reconcileProject } from '../lib/reconcile'
@@ -129,6 +131,12 @@ interface ProjectState {
   cutRange: (startSec: number, endSec: number) => Promise<void>
   moveKeptRange: (id: string, newStartSec: number) => Promise<void>
   deleteKeptRange: (id: string) => Promise<void>
+  moveKeptRanges: (
+    selectedIds: Set<string>,
+    leaderId: string,
+    newLeaderStartSec: number
+  ) => Promise<void>
+  deleteKeptRanges: (ids: Set<string>) => Promise<void>
   runExport: () => Promise<void>
 }
 
@@ -640,6 +648,35 @@ export const useProjectStore = create<ProjectState>()(
           set((state) => {
             if (!state.project) return state
             const keptRanges = deleteKeptRangeById(state.project.edit.keptRanges, id)
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
+        },
+
+        moveKeptRanges: async (selectedIds, leaderId, newLeaderStartSec) => {
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = resolveGroupMovePlacement(
+              state.project.edit.keptRanges,
+              selectedIds,
+              leaderId,
+              newLeaderStartSec
+            )
+            if (keptRanges === state.project.edit.keptRanges) return state
+            changed = true
+            return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }
+          })
+          if (changed) await get().saveProject()
+        },
+
+        deleteKeptRanges: async (ids) => {
+          let changed = false
+          set((state) => {
+            if (!state.project) return state
+            const keptRanges = deleteKeptRangesByIds(state.project.edit.keptRanges, ids)
             if (keptRanges === state.project.edit.keptRanges) return state
             changed = true
             return { project: { ...state.project, edit: { ...state.project.edit, keptRanges } } }

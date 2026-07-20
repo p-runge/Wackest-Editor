@@ -87,6 +87,8 @@ function TimelineEditor(): React.JSX.Element | null {
   const cutRange = useProjectStore((state) => state.cutRange)
   const moveKeptRange = useProjectStore((state) => state.moveKeptRange)
   const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
+  const moveKeptRanges = useProjectStore((state) => state.moveKeptRanges)
+  const deleteKeptRanges = useProjectStore((state) => state.deleteKeptRanges)
   const importSources = useProjectStore((state) => state.importSources)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importError = useProjectStore((state) => state.importError)
@@ -163,6 +165,11 @@ function TimelineEditor(): React.JSX.Element | null {
   const [previewWidthPx, setPreviewWidthPx] = useState(PREVIEW_DEFAULT_WIDTH_PX)
   const previewResizeDragRef = useRef<{ startClientX: number; startWidthPx: number } | null>(null)
   const [activeTool, setActiveTool] = useState<'camera-switch' | 'cut'>('camera-switch')
+  // Which Schnitt-lane chunks are selected for group move/delete — ephemeral UI state, not part
+  // of the document (must not be undo-tracked or persisted), so it lives here rather than in
+  // project-store. Cleared whenever the Cut tool isn't active, so it never lingers stale.
+  const [selectedRangeIds, setSelectedRangeIds] = useState<Set<string>>(new Set())
+  const selectionAnchorIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     const el = bodyScrollRef.current
@@ -173,6 +180,17 @@ function TimelineEditor(): React.JSX.Element | null {
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // Switching away from the Cut tool clears the Schnitt-lane selection so it never lingers
+  // stale — driven directly from the tab change (not an effect keyed on activeTool), since this
+  // is a plain synchronous reaction to a user action, not a sync with an external system.
+  const handleActiveToolChange = (tool: 'camera-switch' | 'cut'): void => {
+    setActiveTool(tool)
+    if (tool !== 'cut') {
+      setSelectedRangeIds(new Set())
+      selectionAnchorIdRef.current = null
+    }
+  }
 
   // The sidebar and the body are separate scroll containers (so the sidebar can stay put
   // horizontally without any position: sticky tricks) — keep their vertical scroll in lockstep.
@@ -251,6 +269,52 @@ function TimelineEditor(): React.JSX.Element | null {
       return segment.kept && next?.kept && segment.endSec === next.startSec
     })
     .map((segment) => segment.endSec)
+
+  // Schnitt-lane multi-select: a single entry point so CutLaneTrack only has to decide *which*
+  // mode a click means (from its pointer-event modifiers) and hand the id off here — the actual
+  // set bookkeeping (toggle/range/replace) lives in one place.
+  const onSelectChunk = (id: string, mode: 'replace' | 'toggle' | 'range'): void => {
+    if (mode === 'replace') {
+      setSelectedRangeIds(new Set([id]))
+      selectionAnchorIdRef.current = id
+      return
+    }
+    if (mode === 'toggle') {
+      setSelectedRangeIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      selectionAnchorIdRef.current = id
+      return
+    }
+    // range: everything between the last anchor and this chunk, in timeline order.
+    const orderedIds = [...project.edit.keptRanges]
+      .sort((a, b) => a.startSec - b.startSec)
+      .map((r) => r.id)
+    const anchorId = selectionAnchorIdRef.current ?? id
+    const anchorIndex = orderedIds.indexOf(anchorId)
+    const targetIndex = orderedIds.indexOf(id)
+    if (anchorIndex === -1 || targetIndex === -1) {
+      setSelectedRangeIds(new Set([id]))
+      return
+    }
+    const [from, to] =
+      anchorIndex <= targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex]
+    setSelectedRangeIds(new Set(orderedIds.slice(from, to + 1)))
+  }
+
+  // Marquee/rubber-band select always replaces the selection outright (no extend-via-marquee) —
+  // simplest interaction that still covers the common "drag a box over several clips" case.
+  const onMarqueeSelect = (ids: string[]): void => {
+    setSelectedRangeIds(new Set(ids))
+    selectionAnchorIdRef.current = ids[ids.length - 1] ?? null
+  }
+
+  const onSelectAllRanges = (): void => {
+    setSelectedRangeIds(new Set(project.edit.keptRanges.map((r) => r.id)))
+  }
 
   // Custom horizontal scrollbar geometry — replaces the native one (hidden via CSS, see
   // .timeline-body::-webkit-scrollbar:horizontal) so it can be visible without reserving any
@@ -379,6 +443,9 @@ function TimelineEditor(): React.JSX.Element | null {
               playheadSec={playheadSec}
               splitKeptRangeAtPlayhead={splitKeptRangeAtPlayhead}
               deleteKeptRange={deleteKeptRange}
+              selectedRangeIds={selectedRangeIds}
+              deleteKeptRanges={deleteKeptRanges}
+              onSelectAllRanges={onSelectAllRanges}
             />
           )}
         </div>
@@ -387,7 +454,7 @@ function TimelineEditor(): React.JSX.Element | null {
       <div className="mx-4 mt-2 flex items-center justify-between gap-2">
         <Tabs
           value={activeTool}
-          onValueChange={(value) => setActiveTool(value as typeof activeTool)}
+          onValueChange={(value) => handleActiveToolChange(value as typeof activeTool)}
         >
           <TabsList>
             <TabsTrigger value="camera-switch" className="gap-1.5">
@@ -483,6 +550,13 @@ function TimelineEditor(): React.JSX.Element | null {
                 onCutRange={(startSec, endSec) => void cutRange(startSec, endSec)}
                 onMoveRange={(id, newStartSec) => void moveKeptRange(id, newStartSec)}
                 onDelete={(id) => void deleteKeptRange(id)}
+                selectedIds={selectedRangeIds}
+                onSelectChunk={onSelectChunk}
+                onMarqueeSelect={onMarqueeSelect}
+                onMoveRanges={(ids, leaderId, newLeaderStartSec) =>
+                  void moveKeptRanges(ids, leaderId, newLeaderStartSec)
+                }
+                onDeleteRanges={(ids) => void deleteKeptRanges(ids)}
               />
 
               <div className="timeline-section">

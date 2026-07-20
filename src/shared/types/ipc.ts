@@ -27,7 +27,8 @@ export const IpcChannels = {
   settingsSet: 'settings:set',
   settingsPickFile: 'settings:pick-file',
   menuUndo: 'menu:undo',
-  menuRedo: 'menu:redo'
+  menuRedo: 'menu:redo',
+  menuSelectAll: 'menu:select-all'
 } as const
 
 export interface ProjectSaveArgs {

@@ -21,10 +21,11 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-// On macOS, ⌘Z/⌘⇧Z are intercepted at the native Cocoa level (the standard undo:/redo: responder
-// actions) before a keydown DOM event ever reaches the renderer — with or without a menu role
-// for them. The only way to observe these keys in the renderer is to bind them as an explicit
-// application-menu accelerator and forward the action over IPC (see preload's `menu.onUndo`).
+// On macOS, ⌘Z/⌘⇧Z/⌘A are intercepted at the native Cocoa level (the standard undo:/redo:/
+// selectAll: responder actions) before a keydown DOM event ever reaches the renderer — with or
+// without a menu role for them. The only way to observe these keys in the renderer is to bind
+// them as an explicit application-menu accelerator and forward the action over IPC (see
+// preload's `menu.onUndo`/`onRedo`/`onSelectAll`).
 function setApplicationMenu(): void {
   const isMac = process.platform === 'darwin'
 
@@ -72,7 +73,13 @@ function setApplicationMenu(): void {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' }
+        {
+          label: 'Alles auswählen',
+          accelerator: 'CmdOrCtrl+A',
+          click: (): void => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannels.menuSelectAll)
+          }
+        }
       ]
     },
     {

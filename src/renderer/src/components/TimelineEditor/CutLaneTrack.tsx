@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import type { KeptRange } from '@shared/types/project'
-import { computeCutLaneSegments, resolveMovePlacement } from '../../lib/timeline-edit'
+import {
+  computeCutLaneSegments,
+  resolveMovePlacement,
+  resolveGroupMovePlacement
+} from '../../lib/timeline-edit'
 import { CUT_LANE_HEIGHT_PX } from './constants'
 
 interface CutLaneTrackProps {
@@ -22,6 +26,19 @@ interface CutLaneTrackProps {
    *  `resolveMovePlacement` used for the live preview, so what was shown is what happens. */
   onMoveRange: (id: string, newStartSec: number) => void
   onDelete: (id: string) => void
+  /** Currently selected chunk ids — drives the `--selected` highlight and which chunks a group
+   *  drag/delete acts on. */
+  selectedIds: Set<string>
+  /** A chunk was clicked with a given modifier combo; the caller owns the actual set bookkeeping
+   *  (toggle/range/replace), this component only decides which mode a click means. */
+  onSelectChunk: (id: string, mode: 'replace' | 'toggle' | 'range') => void
+  /** Shift-drag over empty/cut background finished: replace the selection with every chunk the
+   *  marquee box overlapped. */
+  onMarqueeSelect: (ids: string[]) => void
+  /** Drop a whole selected group at the leader's proposed position, same resolver as the live
+   *  preview (`resolveGroupMovePlacement`). */
+  onMoveRanges: (selectedIds: Set<string>, leaderId: string, newLeaderStartSec: number) => void
+  onDeleteRanges: (ids: Set<string>) => void
 }
 
 // Below this many pixels of pointer travel, a pointer-down/up is treated as a plain click (seek)
@@ -29,6 +46,12 @@ interface CutLaneTrackProps {
 const DRAG_THRESHOLD_PX = 4
 
 interface CutDragState {
+  startAtSec: number
+  startClientX: number
+  currentAtSec: number
+}
+
+interface MarqueeDragState {
   startAtSec: number
   startClientX: number
   currentAtSec: number
@@ -51,16 +74,29 @@ function CutLaneTrack({
   onSeek,
   onCutRange,
   onMoveRange,
-  onDelete
+  onDelete,
+  selectedIds,
+  onSelectChunk,
+  onMarqueeSelect,
+  onMoveRanges,
+  onDeleteRanges
 }: CutLaneTrackProps): React.JSX.Element {
   const [cutDrag, setCutDrag] = useState<CutDragState | null>(null)
+  const [marqueeDrag, setMarqueeDrag] = useState<MarqueeDragState | null>(null)
   const [moveDrag, setMoveDrag] = useState<MoveDragState | null>(null)
+
+  // Dragging any chunk that's already part of a multi-selection moves the whole group together;
+  // dragging a chunk outside the current selection is always a single-chunk move (its pointerdown
+  // handler collapses the selection to just that chunk first, so this stays in sync with it).
+  const isGroupDrag = moveDrag !== null && selectedIds.size > 1 && selectedIds.has(moveDrag.id)
 
   // While a chunk is being dragged, render the RESOLVED layout live — the dragged chunk visibly
   // snaps against neighbors / hops over them, and any chunk that would get pushed aside is shown
   // at its would-be position. Dropping commits exactly this layout (same resolver in the store).
   const previewRanges = moveDrag
-    ? resolveMovePlacement(keptRanges, moveDrag.id, moveDrag.proposedStartSec)
+    ? isGroupDrag
+      ? resolveGroupMovePlacement(keptRanges, selectedIds, moveDrag.id, moveDrag.proposedStartSec)
+      : resolveMovePlacement(keptRanges, moveDrag.id, moveDrag.proposedStartSec)
     : keptRanges
   const committedStartById = new Map(keptRanges.map((r) => [r.id, r.startSec]))
   const segments = computeCutLaneSegments(previewRanges, axisEndSec)
@@ -77,15 +113,35 @@ function CutLaneTrack({
   const handleTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.currentTarget.setPointerCapture(e.pointerId)
     const startAtSec = atSecFromClientX(e)
+    if (e.shiftKey && interactive) {
+      setMarqueeDrag({ startAtSec, startClientX: e.clientX, currentAtSec: startAtSec })
+      return
+    }
     setCutDrag({ startAtSec, startClientX: e.clientX, currentAtSec: startAtSec })
   }
 
   const handleTrackPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (marqueeDrag) {
+      setMarqueeDrag({ ...marqueeDrag, currentAtSec: atSecFromClientX(e) })
+      return
+    }
     if (!cutDrag) return
     setCutDrag({ ...cutDrag, currentAtSec: atSecFromClientX(e) })
   }
 
   const handleTrackPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (marqueeDrag) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+      const moved = Math.abs(e.clientX - marqueeDrag.startClientX) >= DRAG_THRESHOLD_PX
+      if (moved) {
+        const from = Math.min(marqueeDrag.startAtSec, marqueeDrag.currentAtSec)
+        const to = Math.max(marqueeDrag.startAtSec, marqueeDrag.currentAtSec)
+        const ids = keptRanges.filter((r) => r.startSec < to && r.endSec > from).map((r) => r.id)
+        onMarqueeSelect(ids)
+      }
+      setMarqueeDrag(null)
+      return
+    }
     if (!cutDrag) return
     e.currentTarget.releasePointerCapture(e.pointerId)
     const moved = Math.abs(e.clientX - cutDrag.startClientX) >= DRAG_THRESHOLD_PX
@@ -109,6 +165,22 @@ function CutLaneTrack({
     segmentStartSec: number
   ): void => {
     e.stopPropagation()
+    // Cmd/Ctrl-click and Shift-click are discrete selection toggles, not drag gestures — they
+    // never start a move, matching Finder/Premiere convention.
+    if (e.metaKey || e.ctrlKey) {
+      onSelectChunk(segmentId, 'toggle')
+      return
+    }
+    if (e.shiftKey) {
+      onSelectChunk(segmentId, 'range')
+      return
+    }
+    // Grabbing a chunk that isn't part of the current selection collapses the selection down to
+    // just that chunk first, so a plain drag on an unselected chunk is always a single-chunk
+    // move — only dragging a chunk that's already selected moves the whole group.
+    if (!selectedIds.has(segmentId)) {
+      onSelectChunk(segmentId, 'replace')
+    }
     e.currentTarget.setPointerCapture(e.pointerId)
     setMoveDrag({
       id: segmentId,
@@ -130,7 +202,11 @@ function CutLaneTrack({
     e.currentTarget.releasePointerCapture(e.pointerId)
     const moved = Math.abs(e.clientX - moveDrag.startClientX) >= DRAG_THRESHOLD_PX
     if (moved) {
-      onMoveRange(moveDrag.id, moveDrag.proposedStartSec)
+      if (isGroupDrag) {
+        onMoveRanges(selectedIds, moveDrag.id, moveDrag.proposedStartSec)
+      } else {
+        onMoveRange(moveDrag.id, moveDrag.proposedStartSec)
+      }
     } else {
       onSeek(moveDrag.originalStartSec)
     }
@@ -152,10 +228,11 @@ function CutLaneTrack({
           segment.kept &&
           !isDraggedChunk &&
           committedStartById.get(segment.id) !== segment.startSec
+        const isSelected = segment.kept && selectedIds.has(segment.id)
         return (
           <div
             key={segment.id}
-            className={`cut-lane__segment${segment.kept ? '' : ' cut-lane__segment--cut'}${interactive && segment.kept ? ' cut-lane__segment--interactive' : ''}${isDraggedChunk ? ' cut-lane__segment--drag-preview' : ''}${isPushedAside ? ' cut-lane__segment--pushed' : ''}`}
+            className={`cut-lane__segment${segment.kept ? '' : ' cut-lane__segment--cut'}${interactive && segment.kept ? ' cut-lane__segment--interactive' : ''}${isDraggedChunk ? ' cut-lane__segment--drag-preview' : ''}${isPushedAside ? ' cut-lane__segment--pushed' : ''}${isSelected ? ' cut-lane__segment--selected' : ''}`}
             style={{
               left: segment.startSec * pixelsPerSecond,
               width: Math.max(1, (segment.endSec - segment.startSec) * pixelsPerSecond)
@@ -178,7 +255,13 @@ function CutLaneTrack({
                 type="button"
                 className="cut-lane__delete"
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onDelete(segment.id)}
+                onClick={() => {
+                  if (isSelected && selectedIds.size > 1) {
+                    onDeleteRanges(selectedIds)
+                  } else {
+                    onDelete(segment.id)
+                  }
+                }}
                 title="Abschnitt löschen"
               >
                 <Trash2 className="size-2.5" />
@@ -196,6 +279,19 @@ function CutLaneTrack({
             width: Math.max(
               1,
               Math.abs(cutDrag.currentAtSec - cutDrag.startAtSec) * pixelsPerSecond
+            )
+          }}
+        />
+      )}
+
+      {marqueeDrag && interactive && (
+        <div
+          className="cut-lane__marquee-selection"
+          style={{
+            left: Math.min(marqueeDrag.startAtSec, marqueeDrag.currentAtSec) * pixelsPerSecond,
+            width: Math.max(
+              1,
+              Math.abs(marqueeDrag.currentAtSec - marqueeDrag.startAtSec) * pixelsPerSecond
             )
           }}
         />

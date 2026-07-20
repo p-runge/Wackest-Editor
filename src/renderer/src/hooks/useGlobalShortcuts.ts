@@ -10,14 +10,25 @@ export const SKIP_STEP_SEC = 5
 /** App-wide shortcuts (undo/redo, playback) — active regardless of which panel has focus, as
  *  opposed to panel-local shortcuts like CameraSwitcher's digit keys. */
 export function useGlobalShortcuts(): void {
-  // Undo/redo ride the application-menu accelerator + IPC push (see main/index.ts) rather than
-  // a keydown listener — on macOS, Cmd+Z/Cmd+Shift+Z never reach the renderer's DOM at all.
+  // Undo/redo/select-all ride the application-menu accelerator + IPC push (see main/index.ts)
+  // rather than a keydown listener — on macOS, Cmd+Z/Cmd+Shift+Z/Cmd+A never reach the renderer's
+  // DOM at all. The app-level menu item for select-all no longer carries Electron's native
+  // `role: 'selectAll'` (that's what the Cut tool's own listener needs to replace with
+  // "select all clips"), so this is also what keeps native select-all-in-text-field working
+  // (e.g. renaming the project) — everywhere else, Cmd/Ctrl+A outside a text field is a no-op
+  // unless some other listener (like CutTool's) opts in.
   useEffect(() => {
     const unsubUndo = window.api.menu.onUndo(() => useProjectStore.temporal.getState().undo())
     const unsubRedo = window.api.menu.onRedo(() => useProjectStore.temporal.getState().redo())
+    const unsubSelectAll = window.api.menu.onSelectAll(() => {
+      const active = document.activeElement
+      if (!isTypingTarget(active)) return
+      ;(active as HTMLInputElement | HTMLTextAreaElement).select?.()
+    })
     return () => {
       unsubUndo()
       unsubRedo()
+      unsubSelectAll()
     }
   }, [])
 
