@@ -3,7 +3,7 @@ import { FolderOpen, FolderPlus, X } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { Button } from '../ui/button'
-import SettingsPanel from '../SettingsPanel/SettingsPanel'
+import SettingsDialog from '../SettingsDialog/SettingsDialog'
 import logo from '../../assets/logo.png'
 
 function formatRelativeTime(iso: string): string {
@@ -39,7 +39,7 @@ function StartScreen(): React.JSX.Element {
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-y-auto p-8">
       <div className="absolute right-4 top-4">
-        <SettingsPanel />
+        <SettingsDialog />
       </div>
 
       <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-muted-foreground/60 select-none">

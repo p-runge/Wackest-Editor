@@ -9,14 +9,14 @@ export const IpcChannels = {
   projectLoad: 'project:load',
   projectOpenRecent: 'project:open-recent',
   projectResolveInvalid: 'project:resolve-invalid',
-  ingestPickFiles: 'ingest:pick-files',
-  ingestImport: 'ingest:import',
-  ingestRemoveCache: 'ingest:remove-cache',
-  ingestReadWaveform: 'ingest:read-waveform',
+  sourcePickFiles: 'source:pick-files',
+  sourceImport: 'source:import',
+  sourceRemoveCache: 'source:remove-cache',
+  sourceReadWaveform: 'source:read-waveform',
   syncRun: 'sync:run',
   syncProgress: 'sync:progress',
-  sttRun: 'stt:run',
-  sttProgress: 'stt:progress',
+  transcriptionRun: 'transcription:run',
+  transcriptionProgress: 'transcription:progress',
   heatmapRun: 'heatmap:run',
   heatmapProgress: 'heatmap:progress',
   exportChooseOutput: 'export:choose-output',
@@ -71,19 +71,19 @@ export interface ProjectResolveInvalidResult {
   projectDir: string
 }
 
-export interface IngestImportArgs {
+export interface SourceImportArgs {
   filePaths: string[]
   projectDir: string
 }
 
-export type IngestImportResult = SourceClip[]
+export type SourceImportResult = SourceClip[]
 
-export interface IngestRemoveCacheArgs {
+export interface SourceRemoveCacheArgs {
   projectDir: string
   sourceId: string
 }
 
-export type IngestReadWaveformResult = Array<[number, number]>
+export type SourceReadWaveformResult = Array<[number, number]>
 
 export interface SyncRunArgs {
   sources: SourceClip[]
@@ -99,13 +99,13 @@ export interface SyncProgressEvent {
   progress: number
 }
 
-export interface SttRunArgs {
+export interface TranscriptionRunArgs {
   project: Project
 }
 
-export type SttRunResult = TranscriptSegment[]
+export type TranscriptionRunResult = TranscriptSegment[]
 
-export interface SttProgressEvent {
+export interface TranscriptionProgressEvent {
   progress: number
 }
 

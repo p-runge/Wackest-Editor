@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { extractWav16kMono } from '../../ffmpeg'
-import type { SttProvider, SttTranscribeInput, SttTranscribeOutput } from './types'
+import type { TranscriptionProvider, TranscriptionInput, TranscriptionOutput } from './types'
 
 interface WhisperCppJsonOutput {
   transcription: Array<{
@@ -54,11 +54,14 @@ function runWhisperCli(
   })
 }
 
-export function createWhisperCppProvider(binaryPath: string, modelPath: string): SttProvider {
+export function createWhisperCppProvider(
+  binaryPath: string,
+  modelPath: string
+): TranscriptionProvider {
   return {
     id: 'whispercpp-local',
-    async transcribe(input: SttTranscribeInput): Promise<SttTranscribeOutput> {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'wackest-stt-'))
+    async transcribe(input: TranscriptionInput): Promise<TranscriptionOutput> {
+      const tmpDir = await mkdtemp(join(tmpdir(), 'wackest-transcription-'))
       try {
         const wavPath = join(tmpDir, 'audio.wav')
         await extractWav16kMono(input.audioFilePath, wavPath)

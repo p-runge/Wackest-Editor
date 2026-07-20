@@ -87,7 +87,7 @@ function TimelineEditor(): React.JSX.Element | null {
   const cutRange = useProjectStore((state) => state.cutRange)
   const moveKeptRange = useProjectStore((state) => state.moveKeptRange)
   const deleteKeptRange = useProjectStore((state) => state.deleteKeptRange)
-  const importFiles = useProjectStore((state) => state.importFiles)
+  const importSources = useProjectStore((state) => state.importSources)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importError = useProjectStore((state) => state.importError)
 
@@ -162,7 +162,7 @@ function TimelineEditor(): React.JSX.Element | null {
   const hscrollDragRef = useRef<{ startClientX: number; startScrollLeft: number } | null>(null)
   const [previewWidthPx, setPreviewWidthPx] = useState(PREVIEW_DEFAULT_WIDTH_PX)
   const previewResizeDragRef = useRef<{ startClientX: number; startWidthPx: number } | null>(null)
-  const [activeTool, setActiveTool] = useState<'camera-switcher' | 'cut-tool'>('camera-switcher')
+  const [activeTool, setActiveTool] = useState<'camera-switch' | 'cut'>('camera-switch')
 
   useEffect(() => {
     const el = bodyScrollRef.current
@@ -213,7 +213,7 @@ function TimelineEditor(): React.JSX.Element | null {
             ? 'Importiere Kamera-, Mikro- und Handy-Aufnahmen, um mit dem Schnitt zu beginnen.'
             : 'Starte die Synchronisation, um mit dem Schnitt zu beginnen.'}
         </p>
-        <Button disabled={isImporting} onClick={() => void importFiles()}>
+        <Button disabled={isImporting} onClick={() => void importSources()}>
           <Upload /> {isImporting ? 'Importiere…' : 'Rohspuren importieren'}
         </Button>
         <p className="text-xs text-muted-foreground">oder Dateien hierher ziehen</p>
@@ -227,8 +227,8 @@ function TimelineEditor(): React.JSX.Element | null {
   }
 
   const sourceIds = project.sources.map((s) => s.id)
-  const isCutTool = activeTool === 'cut-tool'
-  // One shared program timeline for both tools — Kamerawechsler and Schnitt render the exact
+  const isCut = activeTool === 'cut'
+  // One shared program timeline for both modes — Kamerawechsel and Schnitt render the exact
   // same chunk-mapped lanes/axis, so edits made in either are immediately visible in the other.
   // Only which interactions are live (active-source editing vs. cut/move/delete) depends on the
   // tool.
@@ -324,14 +324,14 @@ function TimelineEditor(): React.JSX.Element | null {
       linkedVideoLabel: source.kind === 'video' ? source.label : undefined
     }))
 
-  // Waveform clicks arrive in placement time; Kamerawechsler edits (set active source) apply to
+  // Waveform clicks arrive in placement time; Kamerawechsel edits (set active source) apply to
   // content time. In a cut gap there's no content — the click just seeks instead of editing.
   const handleWaveformClick = (
     placementSec: number,
     setActiveAt: (atSec: number, sourceId: string) => Promise<void>,
     sourceId: string
   ): void => {
-    if (isCutTool) {
+    if (isCut) {
       seek(placementSec)
       return
     }
@@ -361,7 +361,7 @@ function TimelineEditor(): React.JSX.Element | null {
         />
 
         <div className="flex min-w-56 flex-1 flex-col overflow-hidden rounded-lg border border-border/60 bg-white/[0.02]">
-          {activeTool === 'camera-switcher' ? (
+          {activeTool === 'camera-switch' ? (
             // The switcher operates on content time (which camera is active in the underlying
             // footage). In a cut gap there is no content — the -1 sentinel resolves no coverage
             // anywhere, so every tile disables itself and switch attempts no-op.
@@ -390,13 +390,13 @@ function TimelineEditor(): React.JSX.Element | null {
           onValueChange={(value) => setActiveTool(value as typeof activeTool)}
         >
           <TabsList>
-            <TabsTrigger value="camera-switcher" className="gap-1.5">
+            <TabsTrigger value="camera-switch" className="gap-1.5">
               <SwitchCamera className="size-3.5" />
-              Kamerawechsler
+              Kamerawechsel
             </TabsTrigger>
-            <TabsTrigger value="cut-tool" className="gap-1.5">
+            <TabsTrigger value="cut" className="gap-1.5">
               <Scissors className="size-3.5" />
-              Schnitt Tool
+              Schnitt
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -478,7 +478,7 @@ function TimelineEditor(): React.JSX.Element | null {
                 axisEndSec={axisEndSec}
                 pixelsPerSecond={pixelsPerSecond}
                 trackWidthPx={trackWidthPx}
-                interactive={isCutTool}
+                interactive={isCut}
                 onSeek={seek}
                 onCutRange={(startSec, endSec) => void cutRange(startSec, endSec)}
                 onMoveRange={(id, newStartSec) => void moveKeptRange(id, newStartSec)}
@@ -498,7 +498,7 @@ function TimelineEditor(): React.JSX.Element | null {
                     chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
-                    interactive={!isCutTool}
+                    interactive={!isCut}
                     onWaveformClick={(placementSec) =>
                       handleWaveformClick(placementSec, setActiveVideoAt, source.id)
                     }
@@ -520,7 +520,7 @@ function TimelineEditor(): React.JSX.Element | null {
                     chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
-                    interactive={!isCutTool}
+                    interactive={!isCut}
                     onWaveformClick={(placementSec) =>
                       handleWaveformClick(placementSec, setActiveAudioAt, source.id)
                     }

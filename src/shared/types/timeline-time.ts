@@ -46,7 +46,7 @@ export function sourceCoverageRange(
 }
 
 /**
- * Inverse of the STT/sync forward mapping (`localTime + segment.offsetSec = unifiedTime`):
+ * Inverse of the transcription/sync forward mapping (`localTime + segment.offsetSec = unifiedTime`):
  * finds the source-local playback time for a given point on the unified timeline, by finding
  * whichever sync segment's local range the corresponding local time would fall into.
  */

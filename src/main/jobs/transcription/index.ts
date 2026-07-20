@@ -2,9 +2,9 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Project, SourceClip, TranscriptSegment } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
 import { resolveActiveAudioCoverage, mapLocalTimeToUnified } from '@shared/types/timeline-time'
-import { createSttProvider } from '../../services/providers/stt'
+import { createTranscriptionProvider } from '../../services/providers/transcription'
 
-export interface SttProgressUpdate {
+export interface TranscriptionProgressUpdate {
   progress: number
 }
 
@@ -32,10 +32,10 @@ export function pickActiveAudioSource(project: Project): SourceClip | undefined 
   )
 }
 
-export async function runSttForProject(
+export async function runTranscriptionForProject(
   project: Project,
   settings: AppSettings,
-  onProgress?: (update: SttProgressUpdate) => void
+  onProgress?: (update: TranscriptionProgressUpdate) => void
 ): Promise<TranscriptSegment[]> {
   const coverage = resolveActiveAudioCoverage(
     project.sources,
@@ -48,7 +48,10 @@ export async function runSttForProject(
   }
 
   const sourceIds = Array.from(new Set(coverage.map((c) => c.sourceId)))
-  const provider = createSttProvider(project.providerConfig.stt.provider, settings)
+  const provider = createTranscriptionProvider(
+    project.providerConfig.transcription.provider,
+    settings
+  )
   const result: TranscriptSegment[] = []
 
   for (let i = 0; i < sourceIds.length; i++) {
@@ -58,7 +61,7 @@ export async function runSttForProject(
     const ownCoverage = coverage.filter((c) => c.sourceId === source.id)
     const { segments } = await provider.transcribe({
       audioFilePath: source.originalFilePath,
-      languageHint: project.providerConfig.stt.languageHint,
+      languageHint: project.providerConfig.transcription.languageHint,
       onProgress: (progress) => onProgress?.({ progress: (i + progress) / sourceIds.length })
     })
 
@@ -69,7 +72,7 @@ export async function runSttForProject(
 
       // Attribute the whole segment to whichever of this source's own coverage windows it
       // overlaps most, rather than splitting it across every window it touches — segment-level
-      // (not word-level) STT output can't be cut mid-sentence without duplicating the text.
+      // (not word-level) transcription output can't be cut mid-sentence without duplicating the text.
       let bestCoverage: (typeof ownCoverage)[number] | undefined
       let bestOverlapSec = 0
       for (const cov of ownCoverage) {

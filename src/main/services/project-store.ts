@@ -37,6 +37,17 @@ function migrateProjectData(parsed: unknown): unknown {
     delete data.hardCutMarkers
   }
 
+  // v3 -> v4: `providerConfig.stt` was renamed to `providerConfig.transcription` (naming cleanup only).
+  if (
+    data.providerConfig &&
+    typeof data.providerConfig === 'object' &&
+    'stt' in (data.providerConfig as Record<string, unknown>)
+  ) {
+    const providerConfig = data.providerConfig as Record<string, unknown>
+    providerConfig.transcription = providerConfig.stt
+    delete providerConfig.stt
+  }
+
   data.schemaVersion = SCHEMA_VERSION
   return data
 }

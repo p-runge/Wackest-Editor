@@ -23,10 +23,10 @@ function formatDuration(sec: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
-function FilesPanel(): React.JSX.Element | null {
+function SourcesPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const removeSource = useProjectStore((state) => state.removeSource)
-  const importFiles = useProjectStore((state) => state.importFiles)
+  const importSources = useProjectStore((state) => state.importSources)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importingCount = useProjectStore((state) => state.importingCount)
   const importError = useProjectStore((state) => state.importError)
@@ -45,7 +45,7 @@ function FilesPanel(): React.JSX.Element | null {
         Dateien hierher ziehen oder ins Projekt ablegen, um sie zu importieren.
       </p>
 
-      <Button className="w-full" disabled={isImporting} onClick={() => void importFiles()}>
+      <Button className="w-full" disabled={isImporting} onClick={() => void importSources()}>
         {isImporting ? <Loader2 className="animate-spin" /> : <Upload />}
         {isImporting ? 'Importiere…' : 'Dateien importieren'}
       </Button>
@@ -160,4 +160,4 @@ function FilesPanel(): React.JSX.Element | null {
   )
 }
 
-export default FilesPanel
+export default SourcesPanel

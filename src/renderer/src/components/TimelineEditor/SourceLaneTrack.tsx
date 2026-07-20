@@ -85,7 +85,7 @@ function SourceLaneTrack({
   useEffect(() => {
     if (!source.waveformCachePath) return undefined
     let cancelled = false
-    window.api.ingest
+    window.api.source
       .readWaveform(source.waveformCachePath)
       .then((data) => {
         if (!cancelled) setPeaks(data)

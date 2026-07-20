@@ -8,16 +8,16 @@ import type {
   ProjectOpenRecentArgs,
   ProjectResolveInvalidArgs,
   ProjectResolveInvalidResult,
-  IngestImportArgs,
-  IngestImportResult,
-  IngestRemoveCacheArgs,
-  IngestReadWaveformResult,
+  SourceImportArgs,
+  SourceImportResult,
+  SourceRemoveCacheArgs,
+  SourceReadWaveformResult,
   SyncRunArgs,
   SyncRunResult,
   SyncProgressEvent,
-  SttRunArgs,
-  SttRunResult,
-  SttProgressEvent,
+  TranscriptionRunArgs,
+  TranscriptionRunResult,
+  TranscriptionProgressEvent,
   HeatmapRunArgs,
   HeatmapRunResult,
   HeatmapProgressEvent,
@@ -43,14 +43,14 @@ const api = {
     resolveInvalid: (args: ProjectResolveInvalidArgs): Promise<ProjectResolveInvalidResult> =>
       ipcRenderer.invoke(IpcChannels.projectResolveInvalid, args)
   },
-  ingest: {
-    pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.ingestPickFiles),
-    import: (args: IngestImportArgs): Promise<IngestImportResult> =>
-      ipcRenderer.invoke(IpcChannels.ingestImport, args),
-    removeCache: (args: IngestRemoveCacheArgs): Promise<void> =>
-      ipcRenderer.invoke(IpcChannels.ingestRemoveCache, args),
-    readWaveform: (waveformCachePath: string): Promise<IngestReadWaveformResult> =>
-      ipcRenderer.invoke(IpcChannels.ingestReadWaveform, waveformCachePath),
+  source: {
+    pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.sourcePickFiles),
+    import: (args: SourceImportArgs): Promise<SourceImportResult> =>
+      ipcRenderer.invoke(IpcChannels.sourceImport, args),
+    removeCache: (args: SourceRemoveCacheArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.sourceRemoveCache, args),
+    readWaveform: (waveformCachePath: string): Promise<SourceReadWaveformResult> =>
+      ipcRenderer.invoke(IpcChannels.sourceReadWaveform, waveformCachePath),
     getPathForFile: (file: File): string => webUtils.getPathForFile(file)
   },
   sync: {
@@ -62,12 +62,14 @@ const api = {
       return () => ipcRenderer.removeListener(IpcChannels.syncProgress, listener)
     }
   },
-  stt: {
-    run: (args: SttRunArgs): Promise<SttRunResult> => ipcRenderer.invoke(IpcChannels.sttRun, args),
-    onProgress: (callback: (update: SttProgressEvent) => void): (() => void) => {
-      const listener = (_event: unknown, update: SttProgressEvent): void => callback(update)
-      ipcRenderer.on(IpcChannels.sttProgress, listener)
-      return () => ipcRenderer.removeListener(IpcChannels.sttProgress, listener)
+  transcription: {
+    run: (args: TranscriptionRunArgs): Promise<TranscriptionRunResult> =>
+      ipcRenderer.invoke(IpcChannels.transcriptionRun, args),
+    onProgress: (callback: (update: TranscriptionProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: TranscriptionProgressEvent): void =>
+        callback(update)
+      ipcRenderer.on(IpcChannels.transcriptionProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.transcriptionProgress, listener)
     }
   },
   heatmap: {

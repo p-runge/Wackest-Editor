@@ -4,7 +4,8 @@ import { z } from 'zod'
 // switched from transcript-only to per-source (audio/video/vision) scoring for camera comparison.
 // v3: the hard-cut-gap concept was removed — non-overlapping clusters are now concatenated directly,
 // so the `hardCutMarkers` field is gone.
-export const SCHEMA_VERSION = 3
+// v4: `providerConfig.stt` was renamed to `providerConfig.transcription` (naming cleanup, no data change).
+export const SCHEMA_VERSION = 4
 
 export const SourceKindSchema = z.enum(['video', 'audio'])
 export type SourceKind = z.infer<typeof SourceKindSchema>
@@ -66,8 +67,8 @@ export const TranscriptWordSchema = z.object({
 })
 export type TranscriptWord = z.infer<typeof TranscriptWordSchema>
 
-export const SttProviderIdSchema = z.enum(['openai-whisper-api', 'whispercpp-local'])
-export type SttProviderId = z.infer<typeof SttProviderIdSchema>
+export const TranscriptionProviderIdSchema = z.enum(['openai-whisper-api', 'whispercpp-local'])
+export type TranscriptionProviderId = z.infer<typeof TranscriptionProviderIdSchema>
 
 export const TranscriptSegmentSchema = z.object({
   id: z.string(),
@@ -76,7 +77,7 @@ export const TranscriptSegmentSchema = z.object({
   text: z.string(),
   words: z.array(TranscriptWordSchema).optional(),
   sourceClipId: z.string(),
-  provider: SttProviderIdSchema
+  provider: TranscriptionProviderIdSchema
 })
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>
 
@@ -144,14 +145,14 @@ export type EditState = z.infer<typeof EditStateSchema>
 
 // 'auto' lets the provider auto-detect the spoken language; extendable without a schema migration
 // since it's a plain optional string, though the UI currently only offers auto/de/en.
-export const SttLanguageHintSchema = z.string().optional()
-export type SttLanguageHint = z.infer<typeof SttLanguageHintSchema>
+export const TranscriptionLanguageHintSchema = z.string().optional()
+export type TranscriptionLanguageHint = z.infer<typeof TranscriptionLanguageHintSchema>
 
 export const ProviderConfigSnapshotSchema = z.object({
-  stt: z.object({
-    provider: SttProviderIdSchema,
+  transcription: z.object({
+    provider: TranscriptionProviderIdSchema,
     model: z.string().optional(),
-    languageHint: SttLanguageHintSchema
+    languageHint: TranscriptionLanguageHintSchema
   }),
   heatmap: z.object({
     // .catch keeps an unknown/legacy provider id (e.g. a pre-v2 'heuristic-local') from failing the
@@ -192,7 +193,7 @@ export function createEmptyProject(name: string, id: string): Project {
     trackHeatmaps: [],
     edit: { activeVideoIntervals: [], activeAudioIntervals: [], keptRanges: [] },
     providerConfig: {
-      stt: { provider: 'openai-whisper-api', languageHint: 'auto' },
+      transcription: { provider: 'openai-whisper-api', languageHint: 'auto' },
       heatmap: { provider: 'audio-energy-local' }
     }
   }

@@ -4,9 +4,9 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerProjectIpc } from './ipc/project'
-import { registerIngestIpc } from './ipc/ingest'
+import { registerSourceIpc } from './ipc/source'
 import { registerSyncIpc } from './ipc/sync'
-import { registerSttIpc } from './ipc/stt'
+import { registerTranscriptionIpc } from './ipc/transcription'
 import { registerHeatmapIpc } from './ipc/heatmap'
 import { registerExportIpc } from './ipc/export'
 import { registerSettingsIpc } from './ipc/settings'
@@ -141,9 +141,9 @@ app.whenReady().then(() => {
   registerMediaProtocolHandler()
 
   registerProjectIpc()
-  registerIngestIpc()
+  registerSourceIpc()
   registerSyncIpc()
-  registerSttIpc()
+  registerTranscriptionIpc()
   registerHeatmapIpc()
   registerExportIpc()
   registerSettingsIpc()

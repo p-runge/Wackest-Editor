@@ -6,7 +6,7 @@ import {
   recomputeTimelineDuration,
   type Project,
   type SourceClip,
-  type SttProviderId,
+  type TranscriptionProviderId,
   type HeatmapProviderId
 } from '@shared/types/project'
 import { withRecentProject } from '@shared/types/settings'
@@ -92,17 +92,17 @@ interface ProjectState {
   isSyncing: boolean
   syncProgress: SyncProgressEvent | null
   isTranscribing: boolean
-  sttProgress: number | null
+  transcriptionProgress: number | null
   isScoringHeatmap: boolean
   heatmapProgress: number | null
-  autoCutSummary: { switches: number; changed: boolean } | null
+  autoSwitchSummary: { switches: number; changed: boolean } | null
   isExporting: boolean
   exportProgress: ExportProgressEvent | null
   lastExportPath: string | null
   projectError: string | null
   importError: string | null
   syncError: string | null
-  sttError: string | null
+  transcriptionError: string | null
   heatmapError: string | null
   exportError: string | null
   newProject: () => Promise<void>
@@ -110,17 +110,17 @@ interface ProjectState {
   openRecentProject: (projectDir: string) => Promise<void>
   resolveInvalidProject: (action: 'discard' | 'cancel') => Promise<void>
   saveProject: () => Promise<void>
-  importFiles: () => Promise<void>
-  importFromDrop: (filePaths: string[]) => Promise<void>
+  importSources: () => Promise<void>
+  importSourcesFromDrop: (filePaths: string[]) => Promise<void>
   removeSource: (sourceId: string) => Promise<void>
   runSync: () => Promise<void>
   setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
-  runStt: () => Promise<void>
-  setSttProvider: (provider: SttProviderId) => Promise<void>
-  setSttLanguageHint: (languageHint: string) => Promise<void>
+  runTranscription: () => Promise<void>
+  setTranscriptionProvider: (provider: TranscriptionProviderId) => Promise<void>
+  setTranscriptionLanguageHint: (languageHint: string) => Promise<void>
   runHeatmap: (density: SamplingDensity) => Promise<void>
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
-  generateAutoCut: (options: { minShotSec: number; audioFollowsVideo: boolean }) => Promise<void>
+  generateAutoSwitch: (options: { minShotSec: number; audioFollowsVideo: boolean }) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
   moveActiveVideoBoundary: (leftIntervalId: string, atSec: number) => Promise<void>
@@ -141,7 +141,7 @@ export const useProjectStore = create<ProjectState>()(
 
         set({ isImporting: true, importError: null, importingCount: filePaths.length })
         try {
-          const newClips: SourceClip[] = await window.api.ingest.import({ filePaths, projectDir })
+          const newClips: SourceClip[] = await window.api.source.import({ filePaths, projectDir })
           set((state) => {
             if (!state.project) return state
             const updated: Project = {
@@ -170,17 +170,17 @@ export const useProjectStore = create<ProjectState>()(
         isSyncing: false,
         syncProgress: null,
         isTranscribing: false,
-        sttProgress: null,
+        transcriptionProgress: null,
         isScoringHeatmap: false,
         heatmapProgress: null,
-        autoCutSummary: null,
+        autoSwitchSummary: null,
         isExporting: false,
         exportProgress: null,
         lastExportPath: null,
         projectError: null,
         importError: null,
         syncError: null,
-        sttError: null,
+        transcriptionError: null,
         heatmapError: null,
         exportError: null,
 
@@ -290,15 +290,15 @@ export const useProjectStore = create<ProjectState>()(
           await window.api.project.save({ projectDir, project })
         },
 
-        importFiles: async () => {
+        importSources: async () => {
           const { project, projectDir } = get()
           if (!project || !projectDir) return
 
-          const filePaths = await window.api.ingest.pickFiles()
+          const filePaths = await window.api.source.pickFiles()
           await importFromPaths(filePaths)
         },
 
-        importFromDrop: async (filePaths) => {
+        importSourcesFromDrop: async (filePaths) => {
           await importFromPaths(filePaths)
         },
 
@@ -320,7 +320,7 @@ export const useProjectStore = create<ProjectState>()(
           })
           await get().saveProject()
           try {
-            await window.api.ingest.removeCache({ projectDir, sourceId })
+            await window.api.source.removeCache({ projectDir, sourceId })
           } catch (err) {
             set({ importError: String(err) })
           }
@@ -387,30 +387,30 @@ export const useProjectStore = create<ProjectState>()(
           await get().saveProject()
         },
 
-        runStt: async () => {
+        runTranscription: async () => {
           const { project } = get()
           if (!project) return
 
-          set({ isTranscribing: true, sttError: null, sttProgress: null })
-          const unsubscribe = window.api.stt.onProgress((update) =>
-            set({ sttProgress: update.progress })
+          set({ isTranscribing: true, transcriptionError: null, transcriptionProgress: null })
+          const unsubscribe = window.api.transcription.onProgress((update) =>
+            set({ transcriptionProgress: update.progress })
           )
           try {
-            const transcript = await window.api.stt.run({ project })
+            const transcript = await window.api.transcription.run({ project })
             set((state) => {
               if (!state.project) return state
               return { project: { ...state.project, transcript } }
             })
             await get().saveProject()
           } catch (err) {
-            set({ sttError: String(err) })
+            set({ transcriptionError: String(err) })
           } finally {
             unsubscribe()
-            set({ isTranscribing: false, sttProgress: null })
+            set({ isTranscribing: false, transcriptionProgress: null })
           }
         },
 
-        setSttProvider: async (provider) => {
+        setTranscriptionProvider: async (provider) => {
           set((state) => {
             if (!state.project) return state
             return {
@@ -418,7 +418,7 @@ export const useProjectStore = create<ProjectState>()(
                 ...state.project,
                 providerConfig: {
                   ...state.project.providerConfig,
-                  stt: { ...state.project.providerConfig.stt, provider }
+                  transcription: { ...state.project.providerConfig.transcription, provider }
                 }
               }
             }
@@ -426,7 +426,7 @@ export const useProjectStore = create<ProjectState>()(
           await get().saveProject()
         },
 
-        setSttLanguageHint: async (languageHint) => {
+        setTranscriptionLanguageHint: async (languageHint) => {
           set((state) => {
             if (!state.project) return state
             return {
@@ -434,7 +434,7 @@ export const useProjectStore = create<ProjectState>()(
                 ...state.project,
                 providerConfig: {
                   ...state.project.providerConfig,
-                  stt: { ...state.project.providerConfig.stt, languageHint }
+                  transcription: { ...state.project.providerConfig.transcription, languageHint }
                 }
               }
             }
@@ -450,7 +450,7 @@ export const useProjectStore = create<ProjectState>()(
             isScoringHeatmap: true,
             heatmapError: null,
             heatmapProgress: null,
-            autoCutSummary: null
+            autoSwitchSummary: null
           })
           const unsubscribe = window.api.heatmap.onProgress((update) =>
             set({ heatmapProgress: update.progress })
@@ -470,7 +470,7 @@ export const useProjectStore = create<ProjectState>()(
           }
         },
 
-        generateAutoCut: async ({ minShotSec, audioFollowsVideo }) => {
+        generateAutoSwitch: async ({ minShotSec, audioFollowsVideo }) => {
           const { project } = get()
           if (!project || project.trackHeatmaps.length === 0) return
 
@@ -497,7 +497,7 @@ export const useProjectStore = create<ProjectState>()(
 
           set({
             project: nextProject,
-            autoCutSummary: { switches: Math.max(0, after.length - 1), changed }
+            autoSwitchSummary: { switches: Math.max(0, after.length - 1), changed }
           })
           await get().saveProject()
         },

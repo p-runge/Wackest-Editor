@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type ToolId = 'files' | 'sync' | 'transcript' | 'heatmap' | 'export'
+export type ToolId = 'sources' | 'sync' | 'transcript' | 'heatmap' | 'export'
 
 interface ToolSidebarState {
   activeTool: ToolId | null

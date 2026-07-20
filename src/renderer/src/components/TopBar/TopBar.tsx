@@ -4,7 +4,7 @@ import { useProjectStore } from '../../state/project-store'
 import { Button } from '../ui/button'
 import { Separator } from '../ui/separator'
 import { modKeyLabel } from '../../lib/platform'
-import SettingsPanel from '../SettingsPanel/SettingsPanel'
+import SettingsDialog from '../SettingsDialog/SettingsDialog'
 import logo from '../../assets/logo.png'
 
 function TopBar(): React.JSX.Element {
@@ -57,7 +57,7 @@ function TopBar(): React.JSX.Element {
           <FolderOpen /> Öffnen
         </Button>
         <Separator orientation="vertical" className="mx-1 h-5" />
-        <SettingsPanel />
+        <SettingsDialog />
       </div>
     </header>
   )

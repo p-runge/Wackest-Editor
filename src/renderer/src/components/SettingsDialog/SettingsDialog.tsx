@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
-import { useSettingsUIStore } from '../../state/settings-ui-store'
+import { useSettingsDialogStore } from '../../state/settings-dialog-store'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -23,17 +23,17 @@ function missingFieldMessage(value: string | undefined, requiredBy: string[]): s
   return `Wird benötigt für: ${requiredBy.join(', ')}.`
 }
 
-function SettingsPanel(): React.JSX.Element {
+function SettingsDialog(): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const project = useProjectStore((state) => state.project)
   const settings = useSettingsStore((state) => state.settings)
   const loaded = useSettingsStore((state) => state.loaded)
   const load = useSettingsStore((state) => state.load)
   const update = useSettingsStore((state) => state.update)
-  const isOpen = useSettingsUIStore((state) => state.isOpen)
-  const focusFieldId = useSettingsUIStore((state) => state.focusFieldId)
-  const openSettings = useSettingsUIStore((state) => state.openSettings)
-  const closeSettings = useSettingsUIStore((state) => state.closeSettings)
+  const isOpen = useSettingsDialogStore((state) => state.isOpen)
+  const focusFieldId = useSettingsDialogStore((state) => state.focusFieldId)
+  const openSettings = useSettingsDialogStore((state) => state.openSettings)
+  const closeSettings = useSettingsDialogStore((state) => state.closeSettings)
 
   useEffect(() => {
     if (!loaded) void load()
@@ -62,7 +62,7 @@ function SettingsPanel(): React.JSX.Element {
   }
 
   const openaiKeyRequiredBy: string[] = []
-  if (project?.providerConfig.stt.provider === 'openai-whisper-api') {
+  if (project?.providerConfig.transcription.provider === 'openai-whisper-api') {
     openaiKeyRequiredBy.push('Transkription (OpenAI Whisper API)')
   }
   if (project?.providerConfig.heatmap.provider === 'vision-llm-openai') {
@@ -75,7 +75,7 @@ function SettingsPanel(): React.JSX.Element {
   }
 
   const whisperModelRequiredBy: string[] = []
-  if (project?.providerConfig.stt.provider === 'whispercpp-local') {
+  if (project?.providerConfig.transcription.provider === 'whispercpp-local') {
     whisperModelRequiredBy.push('Transkription (whisper.cpp lokal)')
   }
 
@@ -194,4 +194,4 @@ function SettingsPanel(): React.JSX.Element {
   )
 }
 
-export default SettingsPanel
+export default SettingsDialog

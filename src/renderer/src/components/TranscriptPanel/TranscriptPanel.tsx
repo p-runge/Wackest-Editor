@@ -1,15 +1,15 @@
 import { Captions } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
-import { useSettingsUIStore } from '../../state/settings-ui-store'
+import { useSettingsDialogStore } from '../../state/settings-dialog-store'
 import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
-import type { SttProviderId } from '@shared/types/project'
+import type { TranscriptionProviderId } from '@shared/types/project'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 function missingSettingFor(
-  provider: SttProviderId,
+  provider: TranscriptionProviderId,
   settings: { openaiApiKey?: string; whisperCppModelPath?: string }
 ): { message: string; fieldId: string } | null {
   if (provider === 'openai-whisper-api' && !settings.openaiApiKey) {
@@ -37,13 +37,15 @@ function formatTime(sec: number): string {
 function TranscriptPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const isTranscribing = useProjectStore((state) => state.isTranscribing)
-  const sttProgress = useProjectStore((state) => state.sttProgress)
-  const error = useProjectStore((state) => state.sttError)
-  const runStt = useProjectStore((state) => state.runStt)
-  const setSttProvider = useProjectStore((state) => state.setSttProvider)
-  const setSttLanguageHint = useProjectStore((state) => state.setSttLanguageHint)
+  const transcriptionProgress = useProjectStore((state) => state.transcriptionProgress)
+  const error = useProjectStore((state) => state.transcriptionError)
+  const runTranscription = useProjectStore((state) => state.runTranscription)
+  const setTranscriptionProvider = useProjectStore((state) => state.setTranscriptionProvider)
+  const setTranscriptionLanguageHint = useProjectStore(
+    (state) => state.setTranscriptionLanguageHint
+  )
   const settings = useSettingsStore((state) => state.settings)
-  const openSettings = useSettingsUIStore((state) => state.openSettings)
+  const openSettings = useSettingsDialogStore((state) => state.openSettings)
 
   if (!project) return null
   const audioSources = project.sources.filter((source) => source.probed.hasAudio)
@@ -55,7 +57,7 @@ function TranscriptPanel(): React.JSX.Element | null {
     )
   }
 
-  const missingSetting = missingSettingFor(project.providerConfig.stt.provider, settings)
+  const missingSetting = missingSettingFor(project.providerConfig.transcription.provider, settings)
   const errorFieldId = error ? settingsFieldIdForErrorMessage(error) : null
 
   return (
@@ -66,8 +68,8 @@ function TranscriptPanel(): React.JSX.Element | null {
         <div className="flex flex-col gap-1">
           <Label className="text-xs font-normal text-muted-foreground">Anbieter</Label>
           <Select
-            value={project.providerConfig.stt.provider}
-            onValueChange={(v) => void setSttProvider(v as SttProviderId)}
+            value={project.providerConfig.transcription.provider}
+            onValueChange={(v) => void setTranscriptionProvider(v as TranscriptionProviderId)}
           >
             <SelectTrigger>
               <SelectValue />
@@ -94,8 +96,8 @@ function TranscriptPanel(): React.JSX.Element | null {
         <div className="flex flex-col gap-1">
           <Label className="text-xs font-normal text-muted-foreground">Sprache</Label>
           <Select
-            value={project.providerConfig.stt.languageHint ?? 'auto'}
-            onValueChange={(v) => void setSttLanguageHint(v)}
+            value={project.providerConfig.transcription.languageHint ?? 'auto'}
+            onValueChange={(v) => void setTranscriptionLanguageHint(v)}
           >
             <SelectTrigger>
               <SelectValue />
@@ -112,11 +114,11 @@ function TranscriptPanel(): React.JSX.Element | null {
       <Button
         className="w-full"
         disabled={isTranscribing || !!missingSetting}
-        onClick={() => void runStt()}
+        onClick={() => void runTranscription()}
       >
         <Captions />
         {isTranscribing
-          ? `Transkribiere…${sttProgress != null ? ` ${Math.round(sttProgress * 100)}%` : ''}`
+          ? `Transkribiere…${transcriptionProgress != null ? ` ${Math.round(transcriptionProgress * 100)}%` : ''}`
           : 'Transkribieren'}
       </Button>
 

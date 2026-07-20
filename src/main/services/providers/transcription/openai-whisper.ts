@@ -4,20 +4,20 @@ import { mkdtemp, rm, stat } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { extractCompressedAudioChunks, AUDIO_CHUNK_DURATION_SEC } from '../../ffmpeg'
-import type { SttProvider, SttTranscribeInput, SttTranscribeOutput } from './types'
+import type { TranscriptionProvider, TranscriptionInput, TranscriptionOutput } from './types'
 
 const MAX_UPLOAD_BYTES = 24 * 1024 * 1024 // stay safely under the API's 25MB limit
 
-export function createOpenAiWhisperProvider(apiKey: string): SttProvider {
+export function createOpenAiWhisperProvider(apiKey: string): TranscriptionProvider {
   const client = new OpenAI({ apiKey })
 
   return {
     id: 'openai-whisper-api',
-    async transcribe(input: SttTranscribeInput): Promise<SttTranscribeOutput> {
-      const tmpDir = await mkdtemp(join(tmpdir(), 'wackest-stt-'))
+    async transcribe(input: TranscriptionInput): Promise<TranscriptionOutput> {
+      const tmpDir = await mkdtemp(join(tmpdir(), 'wackest-transcription-'))
       try {
         const chunkPaths = await extractCompressedAudioChunks(input.audioFilePath, tmpDir)
-        const segments: SttTranscribeOutput['segments'] = []
+        const segments: TranscriptionOutput['segments'] = []
 
         for (let i = 0; i < chunkPaths.length; i++) {
           const chunkPath = chunkPaths[i]

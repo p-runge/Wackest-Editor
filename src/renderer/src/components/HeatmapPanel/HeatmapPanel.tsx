@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Flame, SwitchCamera } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
-import { useSettingsUIStore } from '../../state/settings-ui-store'
+import { useSettingsDialogStore } from '../../state/settings-dialog-store'
 import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
 import { colorForScore, colorForSourceId } from '../../lib/colors'
 import { deriveGlobalHeatmap, findHeatmapPeakIndices } from '../../lib/heatmap'
@@ -125,10 +125,10 @@ function HeatmapPanel(): React.JSX.Element | null {
   const error = useProjectStore((state) => state.heatmapError)
   const runHeatmap = useProjectStore((state) => state.runHeatmap)
   const setHeatmapProvider = useProjectStore((state) => state.setHeatmapProvider)
-  const generateAutoCut = useProjectStore((state) => state.generateAutoCut)
-  const autoCutSummary = useProjectStore((state) => state.autoCutSummary)
+  const generateAutoSwitch = useProjectStore((state) => state.generateAutoSwitch)
+  const autoSwitchSummary = useProjectStore((state) => state.autoSwitchSummary)
   const settings = useSettingsStore((state) => state.settings)
-  const openSettings = useSettingsUIStore((state) => state.openSettings)
+  const openSettings = useSettingsDialogStore((state) => state.openSettings)
 
   const [minShotSec, setMinShotSec] = useState(2.5)
   const [audioFollowsVideo, setAudioFollowsVideo] = useState(false)
@@ -321,7 +321,7 @@ function HeatmapPanel(): React.JSX.Element | null {
           </div>
 
           <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-            <p className="text-sm font-medium">Automatischer Schnitt</p>
+            <p className="text-sm font-medium">Automatischer Kamerawechsel</p>
             <p className="text-xs text-muted-foreground">
               Setzt die aktive Kamera pro Zeitpunkt auf die höchstbewertete Spur. Rückgängig per
               Undo.
@@ -349,15 +349,15 @@ function HeatmapPanel(): React.JSX.Element | null {
             </label>
             <Button
               className="w-full"
-              onClick={() => void generateAutoCut({ minShotSec, audioFollowsVideo })}
+              onClick={() => void generateAutoSwitch({ minShotSec, audioFollowsVideo })}
             >
               <SwitchCamera />
-              Auto-Schnitt generieren
+              Kamerawechsel generieren
             </Button>
-            {autoCutSummary &&
-              (autoCutSummary.changed ? (
+            {autoSwitchSummary &&
+              (autoSwitchSummary.changed ? (
                 <p className="text-xs text-success">
-                  Auto-Schnitt angewendet – {autoCutSummary.switches} Kamerawechsel gesetzt.
+                  Angewendet – {autoSwitchSummary.switches} Kamerawechsel gesetzt.
                 </p>
               ) : (
                 <p className="text-xs text-warning">

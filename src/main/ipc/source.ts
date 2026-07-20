@@ -6,17 +6,17 @@ import { probeFile, extractWaveformPeaks, extractThumbnail } from '../services/f
 import type { SourceClip } from '@shared/types/project'
 import {
   IpcChannels,
-  type IngestImportArgs,
-  type IngestImportResult,
-  type IngestRemoveCacheArgs,
-  type IngestReadWaveformResult
+  type SourceImportArgs,
+  type SourceImportResult,
+  type SourceRemoveCacheArgs,
+  type SourceReadWaveformResult
 } from '@shared/types/ipc'
 
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm']
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg']
 
-export function registerIngestIpc(): void {
-  ipcMain.handle(IpcChannels.ingestPickFiles, async () => {
+export function registerSourceIpc(): void {
+  ipcMain.handle(IpcChannels.sourcePickFiles, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Rohspuren importieren',
       properties: ['openFile', 'multiSelections'],
@@ -30,8 +30,8 @@ export function registerIngestIpc(): void {
   })
 
   ipcMain.handle(
-    IpcChannels.ingestImport,
-    async (_event, args: IngestImportArgs): Promise<IngestImportResult> => {
+    IpcChannels.sourceImport,
+    async (_event, args: SourceImportArgs): Promise<SourceImportResult> => {
       const cacheDir = join(args.projectDir, 'cache')
       await mkdir(cacheDir, { recursive: true })
 
@@ -91,15 +91,15 @@ export function registerIngestIpc(): void {
     }
   )
 
-  ipcMain.handle(IpcChannels.ingestRemoveCache, async (_event, args: IngestRemoveCacheArgs) => {
+  ipcMain.handle(IpcChannels.sourceRemoveCache, async (_event, args: SourceRemoveCacheArgs) => {
     const cacheDir = join(args.projectDir, 'cache')
     await rm(join(cacheDir, `${args.sourceId}.waveform.json`), { force: true })
     await rm(join(cacheDir, `${args.sourceId}.thumb.jpg`), { force: true })
   })
 
   ipcMain.handle(
-    IpcChannels.ingestReadWaveform,
-    async (_event, waveformCachePath: string): Promise<IngestReadWaveformResult> => {
+    IpcChannels.sourceReadWaveform,
+    async (_event, waveformCachePath: string): Promise<SourceReadWaveformResult> => {
       const raw = await readFile(waveformCachePath, 'utf-8')
       return JSON.parse(raw) as Array<[number, number]>
     }

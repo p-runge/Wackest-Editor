@@ -3,7 +3,7 @@ import { useProjectStore } from '../../state/project-store'
 import { useToolSidebarStore, type ToolId } from '../../state/tool-sidebar-store'
 import { Button } from '../ui/button'
 import { cn } from '@renderer/lib/utils'
-import FilesPanel from '../FilesPanel/FilesPanel'
+import SourcesPanel from '../SourcesPanel/SourcesPanel'
 import SyncPanel from '../SyncPanel/SyncPanel'
 import TranscriptPanel from '../TranscriptPanel/TranscriptPanel'
 import HeatmapPanel from '../HeatmapPanel/HeatmapPanel'
@@ -14,7 +14,7 @@ const TOOLS: Array<{
   label: string
   icon: React.ComponentType<{ className?: string }>
 }> = [
-  { id: 'files', label: 'Dateien', icon: Files },
+  { id: 'sources', label: 'Quellen', icon: Files },
   { id: 'sync', label: 'Sync', icon: RefreshCw },
   { id: 'transcript', label: 'Transkript', icon: FileText },
   { id: 'heatmap', label: 'Heatmap', icon: Flame },
@@ -39,14 +39,14 @@ function ToolSidebar(): React.JSX.Element | null {
 
   if (!project) return null
 
-  const hasFiles = project.sources.length > 0
+  const hasSources = project.sources.length > 0
   const isSynced = project.sources.some((s) => s.syncSegments.length > 0)
   const hasTranscript = project.transcript.length > 0
   const hasHeatmap = project.trackHeatmaps.length > 0
   const hasExported = !!lastExportPath
 
   const doneById: Record<ToolId, boolean> = {
-    files: hasFiles,
+    sources: hasSources,
     sync: isSynced,
     transcript: hasTranscript,
     heatmap: hasHeatmap,
@@ -68,7 +68,7 @@ function ToolSidebar(): React.JSX.Element | null {
             )}
             onClick={() => setActiveTool(activeTool === id ? null : id)}
           >
-            {id === 'files' && isImporting ? (
+            {id === 'sources' && isImporting ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Icon className="size-4" />
@@ -95,7 +95,7 @@ function ToolSidebar(): React.JSX.Element | null {
             </Button>
           </div>
           <div className="h-full overflow-y-auto px-3 pb-3 pt-3">
-            {activeTool === 'files' && <FilesPanel />}
+            {activeTool === 'sources' && <SourcesPanel />}
             {activeTool === 'sync' && <SyncPanel />}
             {activeTool === 'transcript' && <TranscriptPanel />}
             {activeTool === 'heatmap' && <HeatmapPanel />}

@@ -10,7 +10,7 @@ import InvalidProjectModal from './components/InvalidProjectModal/InvalidProject
 
 function App(): React.JSX.Element {
   const project = useProjectStore((state) => state.project)
-  const importFromDrop = useProjectStore((state) => state.importFromDrop)
+  const importSourcesFromDrop = useProjectStore((state) => state.importSourcesFromDrop)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const dragCounter = useRef(0)
 
@@ -41,11 +41,11 @@ function App(): React.JSX.Element {
     setIsDraggingOver(false)
     try {
       const filePaths = Array.from(e.dataTransfer.files).map((file) =>
-        window.api.ingest.getPathForFile(file)
+        window.api.source.getPathForFile(file)
       )
       if (filePaths.length > 0) {
-        void importFromDrop(filePaths)
-        useToolSidebarStore.getState().setActiveTool('files')
+        void importSourcesFromDrop(filePaths)
+        useToolSidebarStore.getState().setActiveTool('sources')
       }
     } catch (err) {
       console.error('Drag&Drop-Import fehlgeschlagen', err)

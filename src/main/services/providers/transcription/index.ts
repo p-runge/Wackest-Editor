@@ -1,10 +1,13 @@
-import type { SttProviderId } from '@shared/types/project'
+import type { TranscriptionProviderId } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
-import type { SttProvider } from './types'
+import type { TranscriptionProvider } from './types'
 import { createOpenAiWhisperProvider } from './openai-whisper'
 import { createWhisperCppProvider } from './whispercpp-local'
 
-export function createSttProvider(id: SttProviderId, settings: AppSettings): SttProvider {
+export function createTranscriptionProvider(
+  id: TranscriptionProviderId,
+  settings: AppSettings
+): TranscriptionProvider {
   switch (id) {
     case 'openai-whisper-api':
       if (!settings.openaiApiKey) {
@@ -23,4 +26,4 @@ export function createSttProvider(id: SttProviderId, settings: AppSettings): Stt
   }
 }
 
-export type { SttProvider } from './types'
+export type { TranscriptionProvider } from './types'
