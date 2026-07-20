@@ -10,6 +10,7 @@ import {
   type HeatmapProviderId
 } from '@shared/types/project'
 import { withRecentProject } from '@shared/types/settings'
+import type { SamplingDensity } from '@shared/types/sampling'
 import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
 import {
   insertActiveSwitch,
@@ -94,6 +95,7 @@ interface ProjectState {
   sttProgress: number | null
   isScoringHeatmap: boolean
   heatmapProgress: number | null
+  autoCutSummary: { switches: number; changed: boolean } | null
   isExporting: boolean
   exportProgress: ExportProgressEvent | null
   lastExportPath: string | null
@@ -116,7 +118,7 @@ interface ProjectState {
   runStt: () => Promise<void>
   setSttProvider: (provider: SttProviderId) => Promise<void>
   setSttLanguageHint: (languageHint: string) => Promise<void>
-  runHeatmap: () => Promise<void>
+  runHeatmap: (density: SamplingDensity) => Promise<void>
   setHeatmapProvider: (provider: HeatmapProviderId) => Promise<void>
   generateAutoCut: (options: { minShotSec: number; audioFollowsVideo: boolean }) => Promise<void>
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
@@ -171,6 +173,7 @@ export const useProjectStore = create<ProjectState>()(
         sttProgress: null,
         isScoringHeatmap: false,
         heatmapProgress: null,
+        autoCutSummary: null,
         isExporting: false,
         exportProgress: null,
         lastExportPath: null,
@@ -439,16 +442,21 @@ export const useProjectStore = create<ProjectState>()(
           await get().saveProject()
         },
 
-        runHeatmap: async () => {
+        runHeatmap: async (density) => {
           const { project, projectDir } = get()
           if (!project || !projectDir) return
 
-          set({ isScoringHeatmap: true, heatmapError: null, heatmapProgress: null })
+          set({
+            isScoringHeatmap: true,
+            heatmapError: null,
+            heatmapProgress: null,
+            autoCutSummary: null
+          })
           const unsubscribe = window.api.heatmap.onProgress((update) =>
             set({ heatmapProgress: update.progress })
           )
           try {
-            const trackHeatmaps = await window.api.heatmap.run({ project, projectDir })
+            const trackHeatmaps = await window.api.heatmap.run({ project, projectDir, density })
             set((state) => {
               if (!state.project) return state
               return { project: { ...state.project, trackHeatmaps } }
@@ -476,14 +484,20 @@ export const useProjectStore = create<ProjectState>()(
                 .map((iv) => ({ ...iv, id: uuidv4() }))
             : project.edit.activeAudioIntervals
 
-          set((state) => {
-            if (!state.project) return state
-            return {
-              project: withFullActiveCoverage({
-                ...state.project,
-                edit: { ...state.project.edit, activeVideoIntervals, activeAudioIntervals }
-              })
-            }
+          const nextProject = withFullActiveCoverage({
+            ...project,
+            edit: { ...project.edit, activeVideoIntervals, activeAudioIntervals }
+          })
+
+          // Summary for the panel: switches = camera boundaries; `changed` compares the resolved
+          // camera sequence to what was active before, so a no-op click isn't silent.
+          const before = project.edit.activeVideoIntervals.map((iv) => iv.value)
+          const after = nextProject.edit.activeVideoIntervals.map((iv) => iv.value)
+          const changed = before.length !== after.length || before.some((v, i) => v !== after[i])
+
+          set({
+            project: nextProject,
+            autoCutSummary: { switches: Math.max(0, after.length - 1), changed }
           })
           await get().saveProject()
         },

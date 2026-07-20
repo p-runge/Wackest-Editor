@@ -11,14 +11,15 @@ import {
 const MODEL = 'gpt-4o-mini' // cheap vision-capable model, sufficient for this scoring task
 
 export function createVisionOpenAiProvider(apiKey: string): HeatmapProvider {
-  const client = new OpenAI({ apiKey })
+  // maxRetries lifts the SDK's default 429 backoff headroom for bursty multi-frame runs.
+  const client = new OpenAI({ apiKey, maxRetries: 5 })
 
   return {
     id: 'vision-llm-openai',
     async score(input: HeatmapScoreInput): Promise<TrackHeatmap[]> {
       const results = await scoreSourcesWithVision(
         input.videoSources,
-        input.bucketSec,
+        input.density,
         input.sourceMediaPaths,
         async (frames): Promise<RawVisionScore[]> => {
           const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
@@ -28,7 +29,9 @@ export function createVisionOpenAiProvider(apiKey: string): HeatmapProvider {
             content.push({ type: 'text', text: `Bild ${i}:` })
             content.push({
               type: 'image_url',
-              image_url: { url: `data:image/jpeg;base64,${frame.base64}` }
+              // 'low' detail = fixed ~85 tokens/image (vs ~800 at auto/high) — enough to judge which
+              // camera is interesting, ~9x cheaper, and keeps bursts under the tokens-per-minute cap.
+              image_url: { url: `data:image/jpeg;base64,${frame.base64}`, detail: 'low' }
             })
           })
 

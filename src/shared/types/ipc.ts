@@ -1,5 +1,6 @@
 import type { Project, SourceClip, TranscriptSegment, TrackHeatmap } from './project'
 import type { AppSettings } from './settings'
+import type { SamplingDensity } from './sampling'
 
 export const IpcChannels = {
   projectChooseDirectory: 'project:choose-directory',
@@ -111,7 +112,7 @@ export interface SttProgressEvent {
 export interface HeatmapRunArgs {
   project: Project
   projectDir: string
-  bucketSec?: number
+  density: SamplingDensity
 }
 
 export type HeatmapRunResult = TrackHeatmap[]

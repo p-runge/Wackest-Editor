@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import type { Project, TrackHeatmap } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
+import { computeAdaptiveBucketSec, type SamplingDensity } from '@shared/types/sampling'
 import { createHeatmapProvider } from '../../services/providers/heatmap'
 
 export interface HeatmapProgressUpdate {
@@ -13,10 +14,11 @@ export interface HeatmapProgressUpdate {
  * Keyed by provider + bucket size + every video source's id/sync alignment + full transcript, so a
  * re-run after a re-sync (which shifts the per-source unified buckets) or transcript edit recomputes.
  */
-function computeCacheKey(project: Project, bucketSec: number): string {
+function computeCacheKey(project: Project, bucketSec: number, density: SamplingDensity): string {
   const hash = createHash('sha256')
   hash.update(project.providerConfig.heatmap.provider)
   hash.update(String(bucketSec))
+  hash.update(density)
   for (const source of project.sources) {
     if (!source.probed.hasVideo) continue
     hash.update(source.id)
@@ -59,7 +61,7 @@ export async function runHeatmapForProject(
   project: Project,
   projectDir: string,
   settings: AppSettings,
-  bucketSec: number,
+  density: SamplingDensity,
   onProgress?: (update: HeatmapProgressUpdate) => void
 ): Promise<TrackHeatmap[]> {
   const videoSources = project.sources.filter((s) => s.probed.hasVideo)
@@ -67,7 +69,11 @@ export async function runHeatmapForProject(
     throw new Error('Keine Videospuren vorhanden.')
   }
 
-  const cacheKey = computeCacheKey(project, bucketSec)
+  // Bucket size for the audio/motion providers scales with the timeline (finer for short projects);
+  // the vision providers derive their own plan from `density`.
+  const bucketSec = computeAdaptiveBucketSec(project.timelineDurationSec)
+
+  const cacheKey = computeCacheKey(project, bucketSec, density)
   const cached = await readCache(projectDir, cacheKey)
   if (cached) {
     onProgress?.({ progress: 1 })
@@ -84,6 +90,7 @@ export async function runHeatmapForProject(
     transcript: project.transcript,
     timelineDurationSec: project.timelineDurationSec,
     bucketSec,
+    density,
     sourceMediaPaths,
     settings,
     onProgress: (progress) => onProgress?.({ progress })

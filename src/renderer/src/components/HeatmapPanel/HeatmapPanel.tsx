@@ -7,6 +7,7 @@ import { settingsFieldIdForErrorMessage } from '../../lib/settings-errors'
 import { colorForScore, colorForSourceId } from '../../lib/colors'
 import { deriveGlobalHeatmap, findHeatmapPeakIndices } from '../../lib/heatmap'
 import type { HeatmapProviderId } from '@shared/types/project'
+import { planSampling, estimateVisionRun, type SamplingDensity } from '@shared/types/sampling'
 import { Button } from '../ui/button'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
@@ -21,11 +22,30 @@ const PROVIDER_LABELS: Record<HeatmapProviderId, string> = {
   'vision-llm-local': 'Vision-Urteil (lokal/Ollama)'
 }
 
+const DENSITY_LABELS: Record<SamplingDensity, string> = {
+  low: 'niedrig',
+  medium: 'mittel',
+  high: 'hoch'
+}
+
+function isVisionProvider(provider: HeatmapProviderId): boolean {
+  return (
+    provider === 'vision-llm-claude' ||
+    provider === 'vision-llm-openai' ||
+    provider === 'vision-llm-local'
+  )
+}
+
 function formatTime(sec: number): string {
   const total = Math.max(0, Math.round(sec))
   const m = Math.floor(total / 60)
   const s = total % 60
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function formatDurationEstimate(sec: number): string {
+  if (sec < 90) return `~${Math.round(sec)} s`
+  return `~${Math.round(sec / 60)} min`
 }
 
 function providerExplanationFor(provider: HeatmapProviderId): string {
@@ -106,11 +126,13 @@ function HeatmapPanel(): React.JSX.Element | null {
   const runHeatmap = useProjectStore((state) => state.runHeatmap)
   const setHeatmapProvider = useProjectStore((state) => state.setHeatmapProvider)
   const generateAutoCut = useProjectStore((state) => state.generateAutoCut)
+  const autoCutSummary = useProjectStore((state) => state.autoCutSummary)
   const settings = useSettingsStore((state) => state.settings)
   const openSettings = useSettingsUIStore((state) => state.openSettings)
 
   const [minShotSec, setMinShotSec] = useState(2.5)
   const [audioFollowsVideo, setAudioFollowsVideo] = useState(false)
+  const [density, setDensity] = useState<SamplingDensity>('medium')
 
   if (!project) return null
 
@@ -136,6 +158,13 @@ function HeatmapPanel(): React.JSX.Element | null {
   const globalHeatmap = deriveGlobalHeatmap(project.trackHeatmaps)
   const peakIndices = findHeatmapPeakIndices(globalHeatmap)
   const hasResult = project.trackHeatmaps.length > 0
+
+  // Vision providers sample frames (API cost) — show a rough cost/time estimate for the chosen
+  // density so the user can decide before committing.
+  const vision = isVisionProvider(provider)
+  const estimate = vision
+    ? estimateVisionRun(planSampling(videoSources, density).totalFrames, provider)
+    : null
 
   return (
     <div className="flex flex-col gap-3">
@@ -175,10 +204,35 @@ function HeatmapPanel(): React.JSX.Element | null {
         )}
       </div>
 
+      {vision && (
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs font-normal text-muted-foreground">Sampling-Dichte</Label>
+          <Select value={density} onValueChange={(v) => setDensity(v as SamplingDensity)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(DENSITY_LABELS) as SamplingDensity[]).map((id) => (
+                <SelectItem key={id} value={id}>
+                  {DENSITY_LABELS[id]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {estimate && (
+            <p className="text-xs text-muted-foreground">
+              Grobe Schätzung: ~{estimate.totalFrames} Frames ·{' '}
+              {estimate.costUsd > 0 ? `~$${estimate.costUsd.toFixed(2)}` : 'kostenlos'} ·{' '}
+              {formatDurationEstimate(estimate.durationSec)}
+            </p>
+          )}
+        </div>
+      )}
+
       <Button
         className="w-full"
         disabled={isScoringHeatmap || !!missingSetting}
-        onClick={() => void runHeatmap()}
+        onClick={() => void runHeatmap(density)}
       >
         <Flame />
         {isScoringHeatmap
@@ -294,13 +348,23 @@ function HeatmapPanel(): React.JSX.Element | null {
               Ton folgt Bild (aktives Audio mit umschalten)
             </label>
             <Button
-              variant="secondary"
               className="w-full"
               onClick={() => void generateAutoCut({ minShotSec, audioFollowsVideo })}
             >
               <SwitchCamera />
               Auto-Schnitt generieren
             </Button>
+            {autoCutSummary &&
+              (autoCutSummary.changed ? (
+                <p className="text-xs text-success">
+                  Auto-Schnitt angewendet – {autoCutSummary.switches} Kamerawechsel gesetzt.
+                </p>
+              ) : (
+                <p className="text-xs text-warning">
+                  Keine Änderung – die höchstbewertete Kamera war überall schon aktiv. Anderen
+                  Provider probieren oder Heatmap neu berechnen.
+                </p>
+              ))}
           </div>
         </>
       )}

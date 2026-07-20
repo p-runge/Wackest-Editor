@@ -53,7 +53,7 @@ export function createVisionLocalProvider(): HeatmapProvider {
     async score(input: HeatmapScoreInput): Promise<TrackHeatmap[]> {
       const results = await scoreSourcesWithVision(
         input.videoSources,
-        input.bucketSec,
+        input.density,
         input.sourceMediaPaths,
         async (frames): Promise<RawVisionScore[]> => {
           const scores: RawVisionScore[] = []

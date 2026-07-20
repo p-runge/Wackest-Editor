@@ -12,14 +12,15 @@ const MODEL = 'claude-haiku-4-5-20251001'
 const TOOL_NAME = 'report_frame_scores'
 
 export function createVisionClaudeProvider(apiKey: string): HeatmapProvider {
-  const client = new Anthropic({ apiKey })
+  // maxRetries lifts the SDK's default 429 backoff headroom for bursty multi-frame runs.
+  const client = new Anthropic({ apiKey, maxRetries: 5 })
 
   return {
     id: 'vision-llm-claude',
     async score(input: HeatmapScoreInput): Promise<TrackHeatmap[]> {
       const results = await scoreSourcesWithVision(
         input.videoSources,
-        input.bucketSec,
+        input.density,
         input.sourceMediaPaths,
         async (frames): Promise<RawVisionScore[]> => {
           const content: Anthropic.MessageParam['content'] = [
