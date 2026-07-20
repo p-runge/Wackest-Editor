@@ -42,6 +42,10 @@ function StartScreen(): React.JSX.Element {
         <SettingsPanel />
       </div>
 
+      <span className="pointer-events-none absolute bottom-3 right-4 text-xs text-muted-foreground/60 select-none">
+        v{__APP_VERSION__}
+      </span>
+
       <div className="w-full max-w-xl">
         <div className="mb-8 flex flex-col items-center text-center">
           <img src={logo} alt="Wackest Editor" className="mb-4 size-24 rounded-2xl object-cover" />
