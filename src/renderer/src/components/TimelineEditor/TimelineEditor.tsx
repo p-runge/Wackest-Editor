@@ -85,6 +85,7 @@ function TimelineEditor(): React.JSX.Element | null {
   const importSources = useProjectStore((state) => state.importSources)
   const isImporting = useProjectStore((state) => state.isImporting)
   const importError = useProjectStore((state) => state.importError)
+  const zoomFitRequestId = useProjectStore((state) => state.zoomFitRequestId)
 
   const pixelsPerSecond = usePlaybackStore((state) => state.pixelsPerSecond)
   const setZoom = usePlaybackStore((state) => state.setZoom)
@@ -163,6 +164,10 @@ function TimelineEditor(): React.JSX.Element | null {
   // project-store. Cleared whenever the Cut tool isn't active, so it never lingers stale.
   const [selectedRangeIds, setSelectedRangeIds] = useState<Set<string>>(new Set())
   const selectionAnchorIdRef = useRef<string | null>(null)
+  // Tracks the last zoomFitRequestId a fit was actually attempted for. Left unset while bodyWidth
+  // is still 0 (e.g. right on mount, before the ResizeObserver below has reported a real width) so
+  // a fit requested at that moment isn't silently dropped — it retries on the next render instead.
+  const appliedZoomFitRequestIdRef = useRef(-1)
 
   useEffect(() => {
     const el = bodyScrollRef.current
@@ -173,6 +178,22 @@ function TimelineEditor(): React.JSX.Element | null {
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // Zooms out (or in) just enough that the whole program fits the viewport with no horizontal
+  // scrolling, whenever project-store signals a fresh project open, import, or (re-)sync — but
+  // never past the zoom range's own floor (setZoom's clamp), so a program too long to ever fully
+  // fit still lands at the most zoomed-out level rather than being left untouched.
+  useEffect(() => {
+    if (!project || bodyWidth <= 0) return
+    if (appliedZoomFitRequestIdRef.current === zoomFitRequestId) return
+    appliedZoomFitRequestIdRef.current = zoomFitRequestId
+    const programEndSec = computeProgramEndSec(project.edit.keptRanges)
+    if (programEndSec <= 0) return
+    setZoom(bodyWidth / programEndSec)
+    // Reset scroll via the DOM node directly (not React state) — the native scroll event this
+    // triggers keeps the scrollLeft state in sync through the existing handleBodyScroll handler.
+    if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = 0
+  }, [zoomFitRequestId, project, bodyWidth, setZoom])
 
   // Switching away from the Cut tool clears the Schnitt-lane selection so it never lingers
   // stale — driven directly from the tab change (not an effect keyed on activeTool), since this

@@ -93,6 +93,10 @@ interface ProjectState {
   project: Project | null
   projectDir: string | null
   invalidProject: InvalidProjectInfo | null
+  // Bumped whenever the timeline should re-fit its zoom to show the whole program (project
+  // opened, new footage imported, tracks (re-)synced) — TimelineEditor reacts to the change since
+  // it's the only place that knows the viewport's pixel width.
+  zoomFitRequestId: number
   isImporting: boolean
   importingFiles: SourceImportProgressEvent[]
   isSyncing: boolean
@@ -181,7 +185,10 @@ export const useProjectStore = create<ProjectState>()(
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
             // Adding footage can grow the timeline past stale out-of-bounds cut ranges; reconcile
             // drops those (and any dead references) so a re-import can't leave a phantom gap.
-            return { project: reconcileProject(updated) }
+            return {
+              project: reconcileProject(updated),
+              zoomFitRequestId: state.zoomFitRequestId + 1
+            }
           })
           await get().saveProject()
         } catch (err) {
@@ -196,6 +203,7 @@ export const useProjectStore = create<ProjectState>()(
         project: null,
         projectDir: null,
         invalidProject: null,
+        zoomFitRequestId: 0,
         isImporting: false,
         importingFiles: [],
         isSyncing: false,
@@ -246,7 +254,12 @@ export const useProjectStore = create<ProjectState>()(
             // hand-edited into an incomplete state) — loading is the one place every project,
             // however old, passes through before anything else can read it.
             const project = withFullActiveCoverage(reconcileProject(result.project))
-            set({ project, projectDir: result.projectDir, projectError: null })
+            set((state) => ({
+              project,
+              projectDir: result.projectDir,
+              projectError: null,
+              zoomFitRequestId: state.zoomFitRequestId + 1
+            }))
             useProjectStore.temporal.getState().clear()
             await recordRecentProject(result.projectDir, project.name)
             await get().saveProject()
@@ -271,7 +284,12 @@ export const useProjectStore = create<ProjectState>()(
             }
             // See openProject's comment on withFullActiveCoverage.
             const project = withFullActiveCoverage(reconcileProject(result.project))
-            set({ project, projectDir: result.projectDir, projectError: null })
+            set((state) => ({
+              project,
+              projectDir: result.projectDir,
+              projectError: null,
+              zoomFitRequestId: state.zoomFitRequestId + 1
+            }))
             useProjectStore.temporal.getState().clear()
             await recordRecentProject(result.projectDir, project.name)
             await get().saveProject()
@@ -301,12 +319,13 @@ export const useProjectStore = create<ProjectState>()(
             }
             // See openProject's comment on withFullActiveCoverage.
             const project = withFullActiveCoverage(reconcileProject(result.project))
-            set({
+            set((state) => ({
               project,
               projectDir: result.projectDir,
               invalidProject: null,
-              projectError: null
-            })
+              projectError: null,
+              zoomFitRequestId: state.zoomFitRequestId + 1
+            }))
             useProjectStore.temporal.getState().clear()
             await recordRecentProject(result.projectDir, project.name)
             await get().saveProject()
@@ -388,7 +407,10 @@ export const useProjectStore = create<ProjectState>()(
               // Every instant with any footage gets a real active-video/audio interval — a
               // (re-)sync is exactly when the source list or their alignment can have changed,
               // e.g. a new import filling a stretch that used to be a hard-cut gap.
-              return { project: withFullActiveCoverage(updated) }
+              return {
+                project: withFullActiveCoverage(updated),
+                zoomFitRequestId: state.zoomFitRequestId + 1
+              }
             })
             await get().saveProject()
           } catch (err) {
