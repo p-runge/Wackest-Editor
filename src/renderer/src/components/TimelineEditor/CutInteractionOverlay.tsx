@@ -19,17 +19,19 @@ import {
   resolveGroupMovePlacement,
   type CutLaneSegment
 } from '../../lib/timeline-edit'
-import { CUT_LANE_HEIGHT_PX } from './constants'
+import { RULER_HEIGHT_PX, BOTTOM_SPACER_PX } from './constants'
 
-interface CutLaneTrackProps {
+interface CutInteractionOverlayProps {
   keptRanges: KeptRange[]
   /** End of the visible program axis (last chunk end + drag headroom) — bounds pointer-to-time
    *  conversion and the trailing cut-gap rendering; NOT a placement limit (the axis grows). */
   axisEndSec: number
   pixelsPerSecond: number
   trackWidthPx: number
-  /** Whether Schnitt is the active tool — gates drag-to-cut, drag-to-move, and delete. Plain
-   *  click-to-seek stays available either way, same as the other lanes. */
+  /** Whether Schnitt is the active tool — gates every interaction here (drag-to-cut, chunk
+   *  select/drag, marquee-select, click-to-seek). While inactive, the whole overlay is
+   *  pointer-events:none so the lanes underneath get their own clicks/drags back (Kamerawechsel's
+   *  waveform "set active source" clicks and active-boundary drag handles). */
   interactive: boolean
   onSeek: (atSec: number) => void
   /** Click-and-drag across empty/cut background: cut exactly the dragged span in one step, across
@@ -81,7 +83,7 @@ interface MoveDragState {
   proposedStartSec: number
 }
 
-interface CutLaneChunkProps {
+interface CutOverlayChunkProps {
   segment: CutLaneSegment
   /** Where to actually draw this chunk. Equal to `segment.startSec` for every chunk except the
    *  one currently being dragged — that one stays anchored at its pre-drag position here and
@@ -101,14 +103,17 @@ interface CutLaneChunkProps {
 }
 
 /**
- * One kept chunk's own body — a dnd-kit draggable. dnd-kit owns the actual drag mechanics (pointer
- * activation distance, keyboard pick-up/move/drop, Escape-to-cancel, and suppressing the ghost
- * click a browser fires after a real drag) instead of a hand-rolled pointer-event state machine;
- * this component only decides *which* gesture a pointer-down means. Non-dragged chunks (pushed
- * neighbors, other members of a group move) render at the live resolved preview position
- * `CutLaneTrack` computed for them (see `previewRanges` there) same as before.
+ * One kept chunk's own body — a dnd-kit draggable, now spanning the full height of the track
+ * stack (every source/subtitle/heatmap lane at once) rather than a dedicated Schnitt row: a chunk
+ * is a vertical slice through everything, so its interactive/visual footprint matches that. dnd-kit
+ * owns the actual drag mechanics (pointer activation distance, keyboard pick-up/move/drop,
+ * Escape-to-cancel, and suppressing the ghost click a browser fires after a real drag) instead of
+ * a hand-rolled pointer-event state machine; this component only decides *which* gesture a
+ * pointer-down means. Non-dragged chunks (pushed neighbors, other members of a group move) render
+ * at the live resolved preview position `CutInteractionOverlay` computed for them (see
+ * `previewRanges` there) same as before.
  */
-function CutLaneChunk({
+function CutOverlayChunk({
   segment,
   renderStartSec,
   pixelsPerSecond,
@@ -121,7 +126,7 @@ function CutLaneChunk({
   onSeek,
   onDelete,
   onDeleteRanges
-}: CutLaneChunkProps): React.JSX.Element {
+}: CutOverlayChunkProps): React.JSX.Element {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: segment.id,
     disabled: !interactive
@@ -168,7 +173,7 @@ function CutLaneChunk({
     <div
       ref={setNodeRef}
       {...attributes}
-      className={`cut-lane__segment${interactive ? ' cut-lane__segment--interactive' : ''}${isDraggedChunk ? ' cut-lane__segment--drag-preview' : ''}${isPushedAside ? ' cut-lane__segment--pushed' : ''}${isSelected ? ' cut-lane__segment--selected' : ''}`}
+      className={`cut-overlay__segment${interactive ? ' cut-overlay__segment--interactive' : ''}${isDraggedChunk ? ' cut-overlay__segment--drag-preview' : ''}${isPushedAside ? ' cut-overlay__segment--pushed' : ''}${isSelected ? ' cut-overlay__segment--selected' : ''}`}
       style={{
         left: renderStartSec * pixelsPerSecond,
         width: Math.max(1, (segment.endSec - segment.startSec) * pixelsPerSecond),
@@ -191,7 +196,7 @@ function CutLaneChunk({
       {interactive && (
         <button
           type="button"
-          className="cut-lane__delete"
+          className="cut-overlay__delete"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
@@ -210,7 +215,7 @@ function CutLaneChunk({
   )
 }
 
-function CutLaneTrack({
+function CutInteractionOverlay({
   keptRanges,
   axisEndSec,
   pixelsPerSecond,
@@ -226,7 +231,7 @@ function CutLaneTrack({
   onClearSelection,
   onMoveRanges,
   onDeleteRanges
-}: CutLaneTrackProps): React.JSX.Element {
+}: CutInteractionOverlayProps): React.JSX.Element {
   const [cutDrag, setCutDrag] = useState<CutDragState | null>(null)
   const [marqueeDrag, setMarqueeDrag] = useState<MarqueeDragState | null>(null)
   const [moveDrag, setMoveDrag] = useState<MoveDragState | null>(null)
@@ -356,8 +361,8 @@ function CutLaneTrack({
       onDragCancel={handleDragCancel}
     >
       <div
-        className="cut-lane__track"
-        style={{ height: CUT_LANE_HEIGHT_PX, width: trackWidthPx }}
+        className={`cut-overlay__track${interactive ? '' : ' cut-overlay__track--inactive'}`}
+        style={{ top: RULER_HEIGHT_PX, bottom: BOTTOM_SPACER_PX, width: trackWidthPx }}
         onPointerDown={handleTrackPointerDown}
         onPointerMove={handleTrackPointerMove}
         onPointerUp={handleTrackPointerUp}
@@ -367,7 +372,7 @@ function CutLaneTrack({
             return (
               <div
                 key={segment.id}
-                className="cut-lane__segment cut-lane__segment--cut"
+                className="cut-overlay__segment cut-overlay__segment--cut"
                 style={{
                   left: segment.startSec * pixelsPerSecond,
                   width: Math.max(1, (segment.endSec - segment.startSec) * pixelsPerSecond)
@@ -385,7 +390,7 @@ function CutLaneTrack({
             ? (committedStartById.get(segment.id) ?? segment.startSec)
             : segment.startSec
           return (
-            <CutLaneChunk
+            <CutOverlayChunk
               key={segment.id}
               segment={segment}
               renderStartSec={renderStartSec}
@@ -405,7 +410,7 @@ function CutLaneTrack({
 
         {cutDrag && interactive && (
           <div
-            className="cut-lane__drag-selection"
+            className="cut-overlay__drag-selection"
             style={{
               left: Math.min(cutDrag.startAtSec, cutDrag.currentAtSec) * pixelsPerSecond,
               width: Math.max(
@@ -418,7 +423,7 @@ function CutLaneTrack({
 
         {marqueeDrag && interactive && (
           <div
-            className="cut-lane__marquee-selection"
+            className="cut-overlay__marquee-selection"
             style={{
               left: Math.min(marqueeDrag.startAtSec, marqueeDrag.currentAtSec) * pixelsPerSecond,
               width: Math.max(
@@ -433,4 +438,4 @@ function CutLaneTrack({
   )
 }
 
-export default CutLaneTrack
+export default CutInteractionOverlay

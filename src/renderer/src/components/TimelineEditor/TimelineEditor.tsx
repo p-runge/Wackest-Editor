@@ -8,7 +8,7 @@ import SourceLaneTrack from './SourceLaneTrack'
 import LaneLabel from './LaneLabel'
 import SubtitleLaneTrack from './SubtitleLaneTrack'
 import HeatmapLaneTrack from './HeatmapLaneTrack'
-import CutLaneTrack from './CutLaneTrack'
+import CutInteractionOverlay from './CutInteractionOverlay'
 import PreviewPlayer from './PreviewPlayer'
 import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
@@ -28,8 +28,7 @@ import {
   BOTTOM_SPACER_PX,
   RULER_HEIGHT_PX,
   SECTION_HEADER_HEIGHT_PX,
-  SIMPLE_LANE_HEIGHT_PX,
-  CUT_LANE_HEIGHT_PX
+  SIMPLE_LANE_HEIGHT_PX
 } from './constants'
 import { Button } from '../ui/button'
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs'
@@ -39,12 +38,6 @@ import './timeline-editor.css'
 const PREVIEW_MIN_WIDTH_PX = 280
 const PREVIEW_MAX_WIDTH_PX = 960
 const PREVIEW_DEFAULT_WIDTH_PX = 480
-
-// Full-height cross-track overlays (split markers) live in the same
-// `position: relative` container as the ruler and the Schnitt lane, so a plain `top: 0` would
-// paint over those two rows too, not just the content lanes below them. Offsetting by their
-// combined height keeps the overlays scoped to the lanes they're actually meant to mark.
-const BELOW_CUT_LANE_PX = RULER_HEIGHT_PX + CUT_LANE_HEIGHT_PX
 
 /** Sticky section title in the sidebar — stays pinned below the ruler spacer for as long as its
  *  section's rows (wrapped alongside it in the same parent) are still in view. */
@@ -270,9 +263,9 @@ function TimelineEditor(): React.JSX.Element | null {
     })
     .map((segment) => segment.endSec)
 
-  // Schnitt-lane multi-select: a single entry point so CutLaneTrack only has to decide *which*
-  // mode a click means (from its pointer-event modifiers) and hand the id off here — the actual
-  // set bookkeeping (toggle/range/replace) lives in one place.
+  // Schnitt multi-select: a single entry point so CutInteractionOverlay only has to decide
+  // *which* mode a click means (from its pointer-event modifiers) and hand the id off here — the
+  // actual set bookkeeping (toggle/range/replace) lives in one place.
   const onSelectChunk = (id: string, mode: 'replace' | 'toggle' | 'range'): void => {
     if (mode === 'replace') {
       setSelectedRangeIds(new Set([id]))
@@ -490,8 +483,6 @@ function TimelineEditor(): React.JSX.Element | null {
         <div ref={sidebarScrollRef} className="timeline-sidebar" onScroll={handleSidebarScroll}>
           <div className="timeline-sidebar__spacer" style={{ height: RULER_HEIGHT_PX }} />
 
-          <LaneLabel heightPx={CUT_LANE_HEIGHT_PX}>Schnitt</LaneLabel>
-
           <div className="timeline-sidebar__section">
             <SidebarSectionLabel icon={<Film className="size-3" />} title="Video-Quellen" />
             {videoSources.map((source) => (
@@ -543,26 +534,6 @@ function TimelineEditor(): React.JSX.Element | null {
                 pixelsPerSecond={pixelsPerSecond}
                 trackWidthPx={trackWidthPx}
                 onSeek={seek}
-              />
-
-              <CutLaneTrack
-                keptRanges={project.edit.keptRanges}
-                axisEndSec={axisEndSec}
-                pixelsPerSecond={pixelsPerSecond}
-                trackWidthPx={trackWidthPx}
-                interactive={isCut}
-                onSeek={seek}
-                onCutRange={(startSec, endSec) => void cutRange(startSec, endSec)}
-                onMoveRange={(id, newStartSec) => void moveKeptRange(id, newStartSec)}
-                onDelete={(id) => void deleteKeptRange(id)}
-                selectedIds={selectedRangeIds}
-                onSelectChunk={onSelectChunk}
-                onMarqueeSelect={onMarqueeSelect}
-                onClearSelection={onClearSelection}
-                onMoveRanges={(ids, leaderId, newLeaderStartSec) =>
-                  void moveKeptRanges(ids, leaderId, newLeaderStartSec)
-                }
-                onDeleteRanges={(ids) => void deleteKeptRanges(ids)}
               />
 
               <div className="timeline-section">
@@ -631,10 +602,31 @@ function TimelineEditor(): React.JSX.Element | null {
                 <div
                   key={atSec}
                   className="timeline-split-marker"
-                  style={{ top: BELOW_CUT_LANE_PX, left: atSec * pixelsPerSecond }}
+                  style={{ top: RULER_HEIGHT_PX, left: atSec * pixelsPerSecond }}
                   title="Schnittpunkt"
                 />
               ))}
+
+              <CutInteractionOverlay
+                keptRanges={project.edit.keptRanges}
+                axisEndSec={axisEndSec}
+                pixelsPerSecond={pixelsPerSecond}
+                trackWidthPx={trackWidthPx}
+                interactive={isCut}
+                onSeek={seek}
+                onCutRange={(startSec, endSec) => void cutRange(startSec, endSec)}
+                onMoveRange={(id, newStartSec) => void moveKeptRange(id, newStartSec)}
+                onDelete={(id) => void deleteKeptRange(id)}
+                selectedIds={selectedRangeIds}
+                onSelectChunk={onSelectChunk}
+                onMarqueeSelect={onMarqueeSelect}
+                onClearSelection={onClearSelection}
+                onMoveRanges={(ids, leaderId, newLeaderStartSec) =>
+                  void moveKeptRanges(ids, leaderId, newLeaderStartSec)
+                }
+                onDeleteRanges={(ids) => void deleteKeptRanges(ids)}
+              />
+
               <div className="timeline-playhead" style={{ left: playheadLeftPx }} />
             </div>
           </div>

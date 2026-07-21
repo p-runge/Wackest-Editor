@@ -220,19 +220,38 @@
 
 .source-lane__track,
 .subtitle-lane__track,
-.heatmap-lane__track,
-.cut-lane__track {
+.heatmap-lane__track {
   position: relative;
   border-bottom: 1px solid var(--color-border);
 }
 
-.cut-lane__track {
+/* Full-height interactive surface for the Schnitt tool — spans every lane at once (video/audio
+   waveforms, transcript, heatmap), positioned via top/bottom against the shared `.relative`
+   track-stack wrapper in TimelineEditor.tsx (same technique as .timeline-playhead/
+   .timeline-split-marker below) rather than being a lane row of its own. `position: absolute`
+   here doesn't stop it from also being the positioning root for its own children (the segment
+   divs below) — those are independent concerns. */
+.cut-overlay__track {
+  position: absolute;
+  left: 0;
+  /* Must clear .timeline-section__divider (z-index: 2) — those sticky "Video-/Audio-Quellen"
+     dividers sit at the top of each source section, which is the same vertical band chunks (and
+     their top-anchored delete buttons) occupy there; below it, clicks in that band would hit the
+     divider instead of the chunk underneath. */
+  z-index: 3;
   cursor: pointer;
   user-select: none;
   touch-action: none;
 }
 
-.cut-lane__segment {
+/* While Kamerawechsel (not Schnitt) is the active tool, this overlay must be fully transparent to
+   pointer events — otherwise it would shadow SourceLaneTrack's own waveform "set active source"
+   clicks and active-boundary drag handles, which only exist in that mode. */
+.cut-overlay__track--inactive {
+  pointer-events: none;
+}
+
+.cut-overlay__segment {
   position: absolute;
   top: 2px;
   bottom: 2px;
@@ -242,44 +261,50 @@
     box-shadow 0.1s ease;
 }
 
-.cut-lane__segment--cut {
+/* Subtle full-height marking for a cut-out span — the lanes underneath already render nothing
+   there, but a sparse lane (e.g. heatmap with no data nearby) can otherwise look identical to "no
+   data" rather than "cut out", so a faint stripe still marks the boundary. Kept much fainter than
+   the old dedicated-row version, which only had to read clearly across a 32px strip. */
+.cut-overlay__segment--cut {
   background: repeating-linear-gradient(
     45deg,
-    rgba(234, 179, 8, 0.16),
-    rgba(234, 179, 8, 0.16) 6px,
-    rgba(234, 179, 8, 0.3) 6px,
-    rgba(234, 179, 8, 0.3) 12px
+    rgba(234, 179, 8, 0.07),
+    rgba(234, 179, 8, 0.07) 6px,
+    rgba(234, 179, 8, 0.14) 6px,
+    rgba(234, 179, 8, 0.14) 12px
   );
-  border: 1px solid rgba(234, 179, 8, 0.5);
+  border: 1px solid rgba(234, 179, 8, 0.35);
 }
 
-.cut-lane__segment--interactive {
+.cut-overlay__segment--interactive {
   cursor: grab;
 }
 
-.cut-lane__segment--interactive:active {
+.cut-overlay__segment--interactive:active {
   cursor: grabbing;
 }
 
 /* The chunk being dragged, at its resolved (snapped/hopped/pushed-into) position — dashed border
    marks it as a preview; where it draws is exactly where dropping will place it. */
-.cut-lane__segment--drag-preview {
-  background: rgba(255, 255, 255, 0.16);
+.cut-overlay__segment--drag-preview {
+  background: rgba(255, 255, 255, 0.1);
   border: 1.5px dashed var(--color-foreground);
   z-index: 6;
 }
 
 /* A neighbor chunk shown at the position it would be pushed to if the drag were dropped here —
    amber signals "this one moves too", matching the cut/attention color family. */
-.cut-lane__segment--pushed {
+.cut-overlay__segment--pushed {
   box-shadow: inset 0 0 0 1.5px rgba(234, 179, 8, 0.8);
 }
 
 /* Part of the current multi-selection — a distinct accent outline + tint so it reads clearly
-   even stacked with --pushed (during a group drag, a selected chunk can also be pushed aside). */
-.cut-lane__segment--selected {
+   even stacked with --pushed (during a group drag, a selected chunk can also be pushed aside).
+   Fill kept much lighter than the old dedicated-row version — an 18% wash reads fine across a
+   32px strip but is heavy stacked across every lane at once; the inset border carries the signal. */
+.cut-overlay__segment--selected {
   box-shadow: inset 0 0 0 1.5px var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 7%, transparent);
 }
 
 /* Full-height marker at a split point between two adjacent, still-kept clips — otherwise
@@ -295,7 +320,11 @@
   z-index: 4;
 }
 
-.cut-lane__delete {
+/* Floating delete icon, anchored to the chunk's top edge (right below the ruler) rather than a
+   dedicated row of its own. Hidden until hover/selection/keyboard-focus so a tall, full-height
+   chunk band doesn't show a trash icon at rest — :focus-visible is the keyboard-reachable escape
+   hatch for that (a hidden-until-hover-only control would otherwise be unreachable by keyboard). */
+.cut-overlay__delete {
   position: absolute;
   top: 2px;
   right: 2px;
@@ -305,14 +334,22 @@
   border-radius: 2px;
   color: var(--color-muted-foreground);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.cut-lane__delete:hover {
+.cut-overlay__segment:hover .cut-overlay__delete,
+.cut-overlay__segment--selected .cut-overlay__delete,
+.cut-overlay__delete:focus-visible {
+  opacity: 1;
+}
+
+.cut-overlay__delete:hover {
   background: color-mix(in srgb, var(--color-destructive) 20%, transparent);
   color: var(--color-destructive);
 }
 
-.cut-lane__drag-selection {
+.cut-overlay__drag-selection {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -325,7 +362,7 @@
 
 /* Shift-drag marquee/rubber-band select over empty background — dashed accent border keeps it
    visually distinct from the plain drag-to-cut box above (solid destructive-color border). */
-.cut-lane__marquee-selection {
+.cut-overlay__marquee-selection {
   position: absolute;
   top: 0;
   bottom: 0;
