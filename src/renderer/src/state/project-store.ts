@@ -11,7 +11,11 @@ import {
 } from '@shared/types/project'
 import { withRecentProject } from '@shared/types/settings'
 import type { SamplingDensity } from '@shared/types/sampling'
-import type { SyncProgressEvent, ExportProgressEvent } from '@shared/types/ipc'
+import type {
+  SyncProgressEvent,
+  ExportProgressEvent,
+  SourceImportProgressEvent
+} from '@shared/types/ipc'
 import {
   insertActiveSwitch,
   moveIntervalBoundary,
@@ -90,7 +94,7 @@ interface ProjectState {
   projectDir: string | null
   invalidProject: InvalidProjectInfo | null
   isImporting: boolean
-  importingCount: number
+  importingFiles: SourceImportProgressEvent[]
   isSyncing: boolean
   syncProgress: SyncProgressEvent | null
   isTranscribing: boolean
@@ -114,6 +118,7 @@ interface ProjectState {
   saveProject: () => Promise<void>
   importSources: () => Promise<void>
   importSourcesFromDrop: (filePaths: string[]) => Promise<void>
+  cancelImportFile: (filePath: string) => void
   removeSource: (sourceId: string) => Promise<void>
   runSync: () => Promise<void>
   setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
@@ -147,7 +152,24 @@ export const useProjectStore = create<ProjectState>()(
         const { project, projectDir } = get()
         if (!project || !projectDir || filePaths.length === 0) return
 
-        set({ isImporting: true, importError: null, importingCount: filePaths.length })
+        const initialFiles: SourceImportProgressEvent[] = filePaths.map((filePath, fileIndex) => ({
+          filePath,
+          fileName: filePath.split(/[/\\]/).pop() ?? filePath,
+          fileIndex,
+          fileCount: filePaths.length,
+          stage: 'probing',
+          progress: 0
+        }))
+        set({ isImporting: true, importError: null, importingFiles: initialFiles })
+
+        const unsubscribe = window.api.source.onImportProgress((update) => {
+          set((state) => ({
+            importingFiles: state.importingFiles.map((f) =>
+              f.fileIndex === update.fileIndex ? update : f
+            )
+          }))
+        })
+
         try {
           const newClips: SourceClip[] = await window.api.source.import({ filePaths, projectDir })
           set((state) => {
@@ -165,7 +187,8 @@ export const useProjectStore = create<ProjectState>()(
         } catch (err) {
           set({ importError: String(err) })
         } finally {
-          set({ isImporting: false, importingCount: 0 })
+          unsubscribe()
+          set({ isImporting: false, importingFiles: [] })
         }
       }
 
@@ -174,7 +197,7 @@ export const useProjectStore = create<ProjectState>()(
         projectDir: null,
         invalidProject: null,
         isImporting: false,
-        importingCount: 0,
+        importingFiles: [],
         isSyncing: false,
         syncProgress: null,
         isTranscribing: false,
@@ -308,6 +331,10 @@ export const useProjectStore = create<ProjectState>()(
 
         importSourcesFromDrop: async (filePaths) => {
           await importFromPaths(filePaths)
+        },
+
+        cancelImportFile: (filePath) => {
+          void window.api.source.cancelImport({ filePath })
         },
 
         removeSource: async (sourceId) => {

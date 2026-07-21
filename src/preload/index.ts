@@ -10,6 +10,8 @@ import type {
   ProjectResolveInvalidResult,
   SourceImportArgs,
   SourceImportResult,
+  SourceImportProgressEvent,
+  SourceImportCancelArgs,
   SourceRemoveCacheArgs,
   SourceReadWaveformResult,
   SyncRunArgs,
@@ -47,6 +49,14 @@ const api = {
     pickFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannels.sourcePickFiles),
     import: (args: SourceImportArgs): Promise<SourceImportResult> =>
       ipcRenderer.invoke(IpcChannels.sourceImport, args),
+    onImportProgress: (callback: (update: SourceImportProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: SourceImportProgressEvent): void =>
+        callback(update)
+      ipcRenderer.on(IpcChannels.sourceImportProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.sourceImportProgress, listener)
+    },
+    cancelImport: (args: SourceImportCancelArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.sourceImportCancel, args),
     removeCache: (args: SourceRemoveCacheArgs): Promise<void> =>
       ipcRenderer.invoke(IpcChannels.sourceRemoveCache, args),
     readWaveform: (waveformCachePath: string): Promise<SourceReadWaveformResult> =>

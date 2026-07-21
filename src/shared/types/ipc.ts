@@ -11,6 +11,8 @@ export const IpcChannels = {
   projectResolveInvalid: 'project:resolve-invalid',
   sourcePickFiles: 'source:pick-files',
   sourceImport: 'source:import',
+  sourceImportProgress: 'source:import-progress',
+  sourceImportCancel: 'source:import-cancel',
   sourceRemoveCache: 'source:remove-cache',
   sourceReadWaveform: 'source:read-waveform',
   syncRun: 'sync:run',
@@ -78,6 +80,20 @@ export interface SourceImportArgs {
 }
 
 export type SourceImportResult = SourceClip[]
+
+export interface SourceImportProgressEvent {
+  filePath: string
+  fileName: string
+  fileIndex: number
+  fileCount: number
+  stage: 'probing' | 'waveform' | 'thumbnail' | 'done' | 'cancelled'
+  /** 0-1, fraction of progress within the current stage/file. */
+  progress: number
+}
+
+export interface SourceImportCancelArgs {
+  filePath: string
+}
 
 export interface SourceRemoveCacheArgs {
   projectDir: string

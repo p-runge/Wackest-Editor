@@ -4,8 +4,10 @@ import { useProjectStore } from '../../state/project-store'
 import { toMediaUrl } from '@shared/types/media-url'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
+import { Progress } from '../ui/progress'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog'
 import type { Project, SourceClip } from '@shared/types/project'
+import type { SourceImportProgressEvent } from '@shared/types/ipc'
 
 function isSourceInUse(project: Project, sourceId: string): boolean {
   return (
@@ -23,12 +25,48 @@ function formatDuration(sec: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
 }
 
+function importStageLabel(stage: SourceImportProgressEvent['stage']): string {
+  switch (stage) {
+    case 'probing':
+      return 'Analysiere Datei'
+    case 'waveform':
+      return 'Erzeuge Wellenform'
+    case 'thumbnail':
+      return 'Erzeuge Vorschaubild'
+    case 'done':
+      return 'Fertig'
+    case 'cancelled':
+      return 'Abgebrochen'
+    default:
+      return stage
+  }
+}
+
+// Stage boundaries used only to give the per-file progress bar a sensible shape — waveform
+// extraction fully decodes the file and dominates; thumbnail/probing are comparatively instant.
+const STAGE_BASE_FRACTION: Record<SourceImportProgressEvent['stage'], number> = {
+  probing: 0,
+  waveform: 0.05,
+  thumbnail: 0.9,
+  done: 1,
+  cancelled: 1
+}
+
+function fileCompletionFraction(update: SourceImportProgressEvent): number {
+  if (update.stage === 'done' || update.stage === 'cancelled') return 1
+  const base = STAGE_BASE_FRACTION[update.stage]
+  const nextBase =
+    update.stage === 'waveform' ? STAGE_BASE_FRACTION.thumbnail : STAGE_BASE_FRACTION.done
+  return base + update.progress * (nextBase - base)
+}
+
 function SourcesPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const removeSource = useProjectStore((state) => state.removeSource)
   const importSources = useProjectStore((state) => state.importSources)
+  const cancelImportFile = useProjectStore((state) => state.cancelImportFile)
   const isImporting = useProjectStore((state) => state.isImporting)
-  const importingCount = useProjectStore((state) => state.importingCount)
+  const importingFiles = useProjectStore((state) => state.importingFiles)
   const importError = useProjectStore((state) => state.importError)
   const loadingAnchorRef = useRef<HTMLLIElement>(null)
   const [pendingRemove, setPendingRemove] = useState<SourceClip | null>(null)
@@ -105,18 +143,50 @@ function SourcesPanel(): React.JSX.Element | null {
             </li>
           ))}
           {isImporting &&
-            Array.from({ length: importingCount }).map((_, index) => (
-              <li
-                key={`importing-${index}`}
-                ref={index === 0 ? loadingAnchorRef : undefined}
-                className="flex animate-pulse items-center gap-3 rounded-md border border-dashed border-border bg-card px-3 py-2"
-              >
-                <div className="flex size-11 shrink-0 items-center justify-center rounded bg-muted">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1 text-sm text-muted-foreground">Importiere…</div>
-              </li>
-            ))}
+            importingFiles.map((update, index) => {
+              const finished = update.stage === 'done' || update.stage === 'cancelled'
+              return (
+                <li
+                  key={update.filePath}
+                  ref={index === 0 ? loadingAnchorRef : undefined}
+                  className="flex items-center gap-3 rounded-md border border-dashed border-border bg-card px-3 py-2"
+                >
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded bg-muted">
+                    {update.stage === 'cancelled' ? (
+                      <X className="size-4 text-muted-foreground" />
+                    ) : (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium">{update.fileName}</span>
+                      {update.fileCount > 1 && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {update.fileIndex + 1}/{update.fileCount}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {importStageLabel(update.stage)}
+                    </div>
+                    <Progress
+                      value={Math.round(fileCompletionFraction(update) * 100)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Import abbrechen"
+                    disabled={finished}
+                    onClick={() => cancelImportFile(update.filePath)}
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </li>
+              )
+            })}
         </ul>
       )}
 

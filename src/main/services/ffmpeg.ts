@@ -13,6 +13,14 @@ ffmpeg.setFfprobePath(ffprobeStatic.path)
 const WAVEFORM_BUCKETS_PER_SEC = 10
 export const SYNC_SAMPLE_RATE = 8000
 
+/** Thrown instead of the raw ffmpeg "killed with signal" error when an operation is aborted via `signal`. */
+export class MediaOperationCancelledError extends Error {
+  constructor() {
+    super('Media operation cancelled')
+    this.name = 'MediaOperationCancelledError'
+  }
+}
+
 export function probeFile(filePath: string): Promise<ProbedMediaInfo> {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, data) => {
@@ -47,16 +55,46 @@ export function probeFile(filePath: string): Promise<ProbedMediaInfo> {
   })
 }
 
+export interface MediaOperationOptions {
+  onProgress?: (fractionDone: number) => void
+  signal?: AbortSignal
+}
+
 /** Downsampled mono PCM (s16le), used for both waveform display and later cross-correlation sync. */
-export function extractMonoPcm(filePath: string, outPcmPath: string): Promise<void> {
+export function extractMonoPcm(
+  filePath: string,
+  outPcmPath: string,
+  options?: MediaOperationOptions
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(filePath)
+    if (options?.signal?.aborted) return reject(new MediaOperationCancelledError())
+
+    const command = ffmpeg(filePath)
       .noVideo()
       .audioChannels(1)
       .audioFrequency(SYNC_SAMPLE_RATE)
       .format('s16le')
-      .on('error', reject)
-      .on('end', () => resolve())
+
+    const onAbort = (): void => {
+      command.kill('SIGKILL')
+    }
+    options?.signal?.addEventListener('abort', onAbort, { once: true })
+    const cleanup = (): void => options?.signal?.removeEventListener('abort', onAbort)
+
+    command
+      .on('progress', (progress) => {
+        if (progress.percent != null) {
+          options?.onProgress?.(Math.max(0, Math.min(1, progress.percent / 100)))
+        }
+      })
+      .on('error', (err) => {
+        cleanup()
+        reject(options?.signal?.aborted ? new MediaOperationCancelledError() : err)
+      })
+      .on('end', () => {
+        cleanup()
+        resolve()
+      })
       .save(outPcmPath)
   })
 }
@@ -76,10 +114,16 @@ export async function extractWaveformPeaks(
   filePath: string,
   cacheDir: string,
   sourceId: string,
-  durationSec: number
+  durationSec: number,
+  options?: MediaOperationOptions
 ): Promise<string> {
   const pcmPath = join(cacheDir, `${sourceId}.pcm`)
-  await extractMonoPcm(filePath, pcmPath)
+  try {
+    await extractMonoPcm(filePath, pcmPath, options)
+  } catch (err) {
+    await rm(pcmPath, { force: true })
+    throw err
+  }
 
   const buffer = await readFile(pcmPath)
   const samples = new Int16Array(buffer.buffer, buffer.byteOffset, Math.floor(buffer.length / 2))
@@ -303,13 +347,29 @@ export function extractThumbnail(
   filePath: string,
   cacheDir: string,
   sourceId: string,
-  atSec: number
+  atSec: number,
+  options?: Pick<MediaOperationOptions, 'signal'>
 ): Promise<string> {
   const filename = `${sourceId}.thumb.jpg`
   return new Promise((resolve, reject) => {
-    ffmpeg(filePath)
-      .on('error', reject)
-      .on('end', () => resolve(join(cacheDir, filename)))
+    if (options?.signal?.aborted) return reject(new MediaOperationCancelledError())
+
+    const command = ffmpeg(filePath)
+    const onAbort = (): void => {
+      command.kill('SIGKILL')
+    }
+    options?.signal?.addEventListener('abort', onAbort, { once: true })
+    const cleanup = (): void => options?.signal?.removeEventListener('abort', onAbort)
+
+    command
+      .on('error', (err) => {
+        cleanup()
+        reject(options?.signal?.aborted ? new MediaOperationCancelledError() : err)
+      })
+      .on('end', () => {
+        cleanup()
+        resolve(join(cacheDir, filename))
+      })
       .screenshots({
         timestamps: [Math.max(0, atSec)],
         filename,
