@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import ffmpegPath from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
 import ffmpeg from 'fluent-ffmpeg'
@@ -7,8 +8,13 @@ import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import type { ProbedMediaInfo } from '@shared/types/project'
 
-ffmpeg.setFfmpegPath(ffmpegPath as unknown as string)
-ffmpeg.setFfprobePath(ffprobeStatic.path)
+/** asarUnpack extracts these binaries next to app.asar, not inside it — spawn can't exec from inside the archive. */
+function unpackedPath(p: string): string {
+  return app.isPackaged ? p.replace('app.asar', 'app.asar.unpacked') : p
+}
+
+ffmpeg.setFfmpegPath(unpackedPath(ffmpegPath as unknown as string))
+ffmpeg.setFfprobePath(unpackedPath(ffprobeStatic.path))
 
 const WAVEFORM_BUCKETS_PER_SEC = 10
 export const SYNC_SAMPLE_RATE = 8000
