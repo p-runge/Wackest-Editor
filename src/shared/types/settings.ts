@@ -11,6 +11,7 @@ export const AppSettingsSchema = z.object({
   openaiApiKey: z.string().optional(),
   anthropicApiKey: z.string().optional(),
   whisperCppModelPath: z.string().optional(),
+  selectedModelFilename: z.string().optional(),
   recentProjects: z.array(RecentProjectSchema).default([])
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>

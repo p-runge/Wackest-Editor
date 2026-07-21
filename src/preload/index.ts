@@ -28,7 +28,12 @@ import type {
   ExportProgressEvent,
   SettingsGetResult,
   SettingsSetArgs,
-  SettingsPickFileArgs
+  SettingsPickFileArgs,
+  ModelsListResult,
+  ModelDownloadArgs,
+  ModelDownloadProgressEvent,
+  ModelDownloadCancelArgs,
+  ModelDeleteArgs
 } from '@shared/types/ipc'
 
 const api = {
@@ -109,6 +114,21 @@ const api = {
       ipcRenderer.invoke(IpcChannels.settingsSet, args),
     pickFile: (args: SettingsPickFileArgs): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannels.settingsPickFile, args)
+  },
+  models: {
+    list: (): Promise<ModelsListResult> => ipcRenderer.invoke(IpcChannels.modelsList),
+    download: (args: ModelDownloadArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.modelsDownload, args),
+    onDownloadProgress: (callback: (update: ModelDownloadProgressEvent) => void): (() => void) => {
+      const listener = (_event: unknown, update: ModelDownloadProgressEvent): void =>
+        callback(update)
+      ipcRenderer.on(IpcChannels.modelsDownloadProgress, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.modelsDownloadProgress, listener)
+    },
+    cancelDownload: (args: ModelDownloadCancelArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.modelsDownloadCancel, args),
+    delete: (args: ModelDeleteArgs): Promise<void> =>
+      ipcRenderer.invoke(IpcChannels.modelsDelete, args)
   },
   system: {
     copyToClipboard: (text: string): void => clipboard.writeText(text)

@@ -17,11 +17,11 @@ file. Built with Electron, React, and ffmpeg.
 ffmpeg/ffprobe/whisper.cpp do **not** need to be installed separately — ffmpeg/ffprobe are
 bundled as binaries via `ffmpeg-static`/`ffprobe-static`, and `whisper-cli` is compiled from
 source into `resources/bin/` during `pnpm install` (see `scripts/ensure-whisper-binary.cjs`), all
-bundled into the release builds too. A default ggml model (`ggml-base`, multilingual) is bundled
+bundled into the release builds too. A default ggml model (`ggml-tiny-q5_1`, multilingual) is bundled
 the same way (`scripts/ensure-whisper-model.cjs`) so local transcription works with zero manual
-setup; a different/larger model (e.g. `ggml-large-v3` for higher accuracy) can still be selected
-in Settings. If you only use the OpenAI Whisper API for transcription, no local whisper.cpp setup
-is needed at all.
+setup; a larger/more accurate model (e.g. `ggml-large-v3`) can be downloaded on demand from
+Settings, or a custom local model file can be selected there instead. If you only use the OpenAI
+Whisper API for transcription, no local whisper.cpp setup is needed at all.
 
 ## Local Setup
 

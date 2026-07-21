@@ -28,6 +28,11 @@ export const IpcChannels = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   settingsPickFile: 'settings:pick-file',
+  modelsList: 'models:list',
+  modelsDownload: 'models:download',
+  modelsDownloadProgress: 'models:download-progress',
+  modelsDownloadCancel: 'models:download-cancel',
+  modelsDelete: 'models:delete',
   menuUndo: 'menu:undo',
   menuRedo: 'menu:redo',
   menuSelectAll: 'menu:select-all'
@@ -160,4 +165,35 @@ export type SettingsSetArgs = AppSettings
 export interface SettingsPickFileArgs {
   title: string
   extensions: string[]
+}
+
+export interface ModelInfo {
+  filename: string
+  sizeBytes: number
+  downloaded: boolean
+  /** Whether this is the model shipped with the app (see getBundledWhisperModelFilename()). */
+  bundled: boolean
+}
+
+export interface ModelsListResult {
+  models: ModelInfo[]
+  bundledFilename: string
+}
+
+export interface ModelDownloadArgs {
+  filename: string
+}
+
+export interface ModelDownloadProgressEvent {
+  filename: string
+  /** 0-1 */
+  progress: number
+}
+
+export interface ModelDownloadCancelArgs {
+  filename: string
+}
+
+export interface ModelDeleteArgs {
+  filename: string
 }

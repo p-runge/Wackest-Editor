@@ -8,7 +8,7 @@ const path = require('node:path')
 const { Readable } = require('node:stream')
 const { pipeline } = require('node:stream/promises')
 
-const MODEL_NAME = 'ggml-base.bin'
+const MODEL_NAME = 'ggml-tiny-q5_1.bin'
 const MODEL_URL = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${MODEL_NAME}`
 const REPO_ROOT = path.join(__dirname, '..')
 

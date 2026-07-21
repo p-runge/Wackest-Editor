@@ -1,5 +1,6 @@
 appId: com.progani.wackest-editor
 productName: Wackest Editor
+compression: maximum
 directories:
   buildResources: build
 files:

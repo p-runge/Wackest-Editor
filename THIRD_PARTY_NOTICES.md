@@ -12,11 +12,12 @@ binary for local, offline transcription.
 - License: MIT
 - Copyright (c) 2023-2024 The ggml authors
 
-## ggml-base (Whisper model weights)
+## ggml-tiny-q5_1 (Whisper model weights)
 
 Bundled as the default local-transcription model (see `scripts/ensure-whisper-model.cjs`),
 downloaded from https://huggingface.co/ggerganov/whisper.cpp. Converted to the ggml format from
-OpenAI's original Whisper model weights.
+OpenAI's original Whisper model weights. Additional models from the same source can be downloaded
+on demand from Settings.
 
 - Project: https://github.com/openai/whisper
 - License: MIT

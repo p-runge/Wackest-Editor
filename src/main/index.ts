@@ -10,6 +10,7 @@ import { registerTranscriptionIpc } from './ipc/transcription'
 import { registerHeatmapIpc } from './ipc/heatmap'
 import { registerExportIpc } from './ipc/export'
 import { registerSettingsIpc } from './ipc/settings'
+import { registerModelsIpc } from './ipc/models'
 import { registerMediaProtocolHandler } from './services/media-protocol'
 import { MEDIA_URL_SCHEME } from '@shared/types/media-url'
 import { IpcChannels } from '@shared/types/ipc'
@@ -154,6 +155,7 @@ app.whenReady().then(() => {
   registerHeatmapIpc()
   registerExportIpc()
   registerSettingsIpc()
+  registerModelsIpc()
 
   createWindow()
 

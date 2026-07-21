@@ -14,6 +14,12 @@ export function getBundledWhisperCliPath(): string {
   return path.join(resourcesBaseDir(), 'bin', dir, exe)
 }
 
+const BUNDLED_MODEL_FILENAME = 'ggml-tiny-q5_1.bin'
+
 export function getBundledWhisperModelPath(): string {
-  return path.join(resourcesBaseDir(), 'models', 'ggml-base.bin')
+  return path.join(resourcesBaseDir(), 'models', BUNDLED_MODEL_FILENAME)
+}
+
+export function getBundledWhisperModelFilename(): string {
+  return BUNDLED_MODEL_FILENAME
 }
