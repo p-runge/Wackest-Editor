@@ -48,6 +48,9 @@ interface CutLaneTrackProps {
   /** Shift-drag over empty/cut background finished: replace the selection with every chunk the
    *  marquee box overlapped. */
   onMarqueeSelect: (ids: string[]) => void
+  /** A plain click landed on empty/cut background (not on a chunk, not a drag) — clears the
+   *  selection, same as clicking empty canvas in most selection UIs. */
+  onClearSelection: () => void
   /** Drop a whole selected group at the leader's proposed position, same resolver as the live
    *  preview (`resolveGroupMovePlacement`). */
   onMoveRanges: (selectedIds: Set<string>, leaderId: string, newLeaderStartSec: number) => void
@@ -146,8 +149,18 @@ function CutLaneChunk({
 
   // Only fires for a genuine click — dnd-kit swallows the trailing click event once a pointer
   // gesture actually crossed the drag activation distance, so this never double-fires with a drop.
-  const handleClick = (): void => {
-    if (!selectedIds.has(segment.id)) onSelectChunk(segment.id, 'replace')
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>): void => {
+    // Cmd/Ctrl/Shift clicks already applied their selection effect in pointerdown above (toggle/
+    // range) — the browser still fires a plain 'click' afterward regardless, which must only seek
+    // here, not also collapse what pointerdown just built.
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      onSeek(segment.startSec)
+      return
+    }
+    // A plain click always collapses the selection down to just this chunk, even if it was
+    // already part of a multi-selection — only *dragging* an already-selected chunk keeps the
+    // whole group together; a click that never turned into a drag always means "select just this".
+    onSelectChunk(segment.id, 'replace')
     onSeek(segment.startSec)
   }
 
@@ -210,6 +223,7 @@ function CutLaneTrack({
   selectedIds,
   onSelectChunk,
   onMarqueeSelect,
+  onClearSelection,
   onMoveRanges,
   onDeleteRanges
 }: CutLaneTrackProps): React.JSX.Element {
@@ -291,6 +305,9 @@ function CutLaneTrack({
       )
     } else if (!moved) {
       onSeek(cutDrag.startAtSec)
+      // Clicked empty/cut background rather than a chunk — clear any selection, same as
+      // clicking outside a selection in most other selection UIs.
+      if (selectedIds.size > 0) onClearSelection()
     }
     setCutDrag(null)
   }

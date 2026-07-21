@@ -316,6 +316,11 @@ function TimelineEditor(): React.JSX.Element | null {
     setSelectedRangeIds(new Set(project.edit.keptRanges.map((r) => r.id)))
   }
 
+  const onClearSelection = (): void => {
+    setSelectedRangeIds(new Set())
+    selectionAnchorIdRef.current = null
+  }
+
   // Custom horizontal scrollbar geometry — replaces the native one (hidden via CSS, see
   // .timeline-body::-webkit-scrollbar:horizontal) so it can be visible without reserving any
   // row-content height. Mirrors standard scrollbar math: thumb size proportional to the visible
@@ -553,6 +558,7 @@ function TimelineEditor(): React.JSX.Element | null {
                 selectedIds={selectedRangeIds}
                 onSelectChunk={onSelectChunk}
                 onMarqueeSelect={onMarqueeSelect}
+                onClearSelection={onClearSelection}
                 onMoveRanges={(ids, leaderId, newLeaderStartSec) =>
                   void moveKeptRanges(ids, leaderId, newLeaderStartSec)
                 }
