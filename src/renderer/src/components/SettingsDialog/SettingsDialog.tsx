@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Settings2 } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
 import { useSettingsStore } from '../../state/settings-store'
@@ -15,7 +15,6 @@ import {
   DialogTrigger
 } from '../ui/dialog'
 
-const BREW_INSTALL_COMMAND = 'brew install whisper-cpp'
 const WHISPER_MODELS_URL = 'https://huggingface.co/ggerganov/whisper.cpp/tree/main'
 
 function missingFieldMessage(value: string | undefined, requiredBy: string[]): string | null {
@@ -24,7 +23,6 @@ function missingFieldMessage(value: string | undefined, requiredBy: string[]): s
 }
 
 function SettingsDialog(): React.JSX.Element {
-  const [copied, setCopied] = useState(false)
   const project = useProjectStore((state) => state.project)
   const settings = useSettingsStore((state) => state.settings)
   const loaded = useSettingsStore((state) => state.loaded)
@@ -38,20 +36,6 @@ function SettingsDialog(): React.JSX.Element {
   useEffect(() => {
     if (!loaded) void load()
   }, [loaded, load])
-
-  const copyInstallCommand = (): void => {
-    window.api.system.copyToClipboard(BREW_INSTALL_COMMAND)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
-  const pickWhisperBinary = async (): Promise<void> => {
-    const path = await window.api.settings.pickFile({
-      title: 'whisper.cpp Binary wählen',
-      extensions: ['*']
-    })
-    if (path) await update({ whisperCppBinaryPath: path })
-  }
 
   const pickWhisperModel = async (): Promise<void> => {
     const path = await window.api.settings.pickFile({
@@ -74,17 +58,8 @@ function SettingsDialog(): React.JSX.Element {
     anthropicKeyRequiredBy.push('Heatmap (Claude Vision API)')
   }
 
-  const whisperModelRequiredBy: string[] = []
-  if (project?.providerConfig.transcription.provider === 'whispercpp-local') {
-    whisperModelRequiredBy.push('Transkription (whisper.cpp lokal)')
-  }
-
   const openaiKeyMessage = missingFieldMessage(settings.openaiApiKey, openaiKeyRequiredBy)
   const anthropicKeyMessage = missingFieldMessage(settings.anthropicApiKey, anthropicKeyRequiredBy)
-  const whisperModelMessage = missingFieldMessage(
-    settings.whisperCppModelPath,
-    whisperModelRequiredBy
-  )
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => (open ? openSettings() : closeSettings())}>
@@ -132,62 +107,32 @@ function SettingsDialog(): React.JSX.Element {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="whisper-bin">whisper.cpp Binary-Pfad</Label>
-            <div className="flex gap-2">
-              <Input
-                id="whisper-bin"
-                value={settings.whisperCppBinaryPath ?? ''}
-                placeholder="whisper-cli (auf PATH)"
-                onChange={(e) => void update({ whisperCppBinaryPath: e.target.value })}
-              />
-              <Button variant="outline" onClick={() => void pickWhisperBinary()}>
-                Durchsuchen
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Pfad zur ausführbaren whisper.cpp-Datei. Leer lassen, wenn `whisper-cli` bereits
-              systemweit auf dem PATH installiert ist.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="whisper-model">whisper.cpp Modell (.bin)</Label>
+            <Label htmlFor="whisper-model">Eigenes whisper.cpp Modell (.bin, optional)</Label>
             <div className="flex gap-2">
               <Input
                 id="whisper-model"
                 value={settings.whisperCppModelPath ?? ''}
-                placeholder="/pfad/zu/ggml-base.bin"
+                placeholder="mitgeliefertes Standardmodell (ggml-base) verwenden"
                 onChange={(e) => void update({ whisperCppModelPath: e.target.value })}
               />
               <Button variant="outline" onClick={() => void pickWhisperModel()}>
                 Durchsuchen
               </Button>
             </div>
-            {whisperModelMessage && <p className="text-xs text-warning">{whisperModelMessage}</p>}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Ein kleines Standardmodell ist bereits mitgeliefert. Für höhere Genauigkeit (auf
+              Kosten von Geschwindigkeit und Downloadgröße) z.B.{' '}
+              <a
+                href={WHISPER_MODELS_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                ggml-large-v3 von huggingface.co/ggerganov/whisper.cpp
+              </a>{' '}
+              laden und hier auswählen.
+            </p>
           </div>
-
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Lokales whisper.cpp installieren:{' '}
-            <button
-              type="button"
-              className="mx-1 inline-flex items-center gap-1.5 rounded border border-border px-1.5 py-0.5 align-middle text-foreground"
-              title="In die Zwischenablage kopieren"
-              onClick={copyInstallCommand}
-            >
-              <code className="bg-transparent p-0">{BREW_INSTALL_COMMAND}</code>
-              <span>{copied ? '✓' : '⧉'}</span>
-            </button>{' '}
-            Modelle laden von{' '}
-            <a
-              href={WHISPER_MODELS_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline-offset-4 hover:underline"
-            >
-              huggingface.co/ggerganov/whisper.cpp
-            </a>
-            .
-          </p>
         </div>
       </DialogContent>
     </Dialog>

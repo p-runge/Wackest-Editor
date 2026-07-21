@@ -13,7 +13,7 @@ asarUnpack:
   - 'resources/**'
   - '**/node_modules/ffmpeg-static/**'
   - '**/node_modules/ffprobe-static/**'
-beforePack: ./scripts/ensure-ffmpeg-binary.cjs
+beforePack: ./scripts/before-pack.cjs
 win:
   executableName: wackest-editor
   target:

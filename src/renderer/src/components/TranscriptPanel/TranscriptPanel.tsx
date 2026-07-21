@@ -10,18 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 
 function missingSettingFor(
   provider: TranscriptionProviderId,
-  settings: { openaiApiKey?: string; whisperCppModelPath?: string }
+  settings: { openaiApiKey?: string }
 ): { message: string; fieldId: string } | null {
   if (provider === 'openai-whisper-api' && !settings.openaiApiKey) {
     return {
       message: 'Für OpenAI Whisper API wird ein OpenAI API-Key benötigt.',
       fieldId: 'openai-key'
-    }
-  }
-  if (provider === 'whispercpp-local' && !settings.whisperCppModelPath) {
-    return {
-      message: 'Für whisper.cpp (lokal) wird ein Modellpfad benötigt.',
-      fieldId: 'whisper-model'
     }
   }
   return null

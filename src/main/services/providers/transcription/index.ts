@@ -1,6 +1,7 @@
 import type { TranscriptionProviderId } from '@shared/types/project'
 import type { AppSettings } from '@shared/types/settings'
 import type { TranscriptionProvider } from './types'
+import { getBundledWhisperCliPath, getBundledWhisperModelPath } from './bundled-resources'
 import { createOpenAiWhisperProvider } from './openai-whisper'
 import { createWhisperCppProvider } from './whispercpp-local'
 
@@ -15,13 +16,8 @@ export function createTranscriptionProvider(
       }
       return createOpenAiWhisperProvider(settings.openaiApiKey)
     case 'whispercpp-local': {
-      if (!settings.whisperCppModelPath) {
-        throw new Error(
-          'Kein whisper.cpp-Modellpfad hinterlegt. Bitte in den Einstellungen ein ggml-Modell auswählen.'
-        )
-      }
-      const binaryPath = settings.whisperCppBinaryPath || 'whisper-cli'
-      return createWhisperCppProvider(binaryPath, settings.whisperCppModelPath)
+      const modelPath = settings.whisperCppModelPath || getBundledWhisperModelPath()
+      return createWhisperCppProvider(getBundledWhisperCliPath(), modelPath)
     }
   }
 }

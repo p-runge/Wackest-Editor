@@ -10,16 +10,17 @@ file. Built with Electron, React, and ffmpeg.
 
 - Node.js 22+
 - pnpm (this repo's default package manager, see `pnpm-lock.yaml`)
-- For local transcription (optional): `whisper.cpp`, e.g. via `brew install whisper-cpp`, plus
-  a model from [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main) —
-  `ggml-large-v3` is recommended for the best transcription accuracy (larger download and slower
-  than `base`/`small`, but noticeably fewer errors)
+- A C/C++ toolchain + CMake, needed once during `pnpm install` to build the bundled `whisper-cli`
+  binary from source (Xcode Command Line Tools on macOS, `build-essential` on Linux, Visual
+  Studio Build Tools on Windows — all already present on GitHub-hosted CI runners)
 
-ffmpeg/ffprobe do **not** need to be installed separately — they're bundled as binaries via
-`ffmpeg-static` / `ffprobe-static`, in the release builds too. `whisper.cpp` is **not** bundled,
-though: even when running a packaged release artifact (.dmg/.exe/.AppImage), local transcription
-still requires installing the `whisper-cli` binary and a model yourself and pointing to them in
-Settings. If you only use the OpenAI Whisper API for transcription, no local whisper.cpp install
+ffmpeg/ffprobe/whisper.cpp do **not** need to be installed separately — ffmpeg/ffprobe are
+bundled as binaries via `ffmpeg-static`/`ffprobe-static`, and `whisper-cli` is compiled from
+source into `resources/bin/` during `pnpm install` (see `scripts/ensure-whisper-binary.cjs`), all
+bundled into the release builds too. A default ggml model (`ggml-base`, multilingual) is bundled
+the same way (`scripts/ensure-whisper-model.cjs`) so local transcription works with zero manual
+setup; a different/larger model (e.g. `ggml-large-v3` for higher accuracy) can still be selected
+in Settings. If you only use the OpenAI Whisper API for transcription, no local whisper.cpp setup
 is needed at all.
 
 ## Local Setup
@@ -29,9 +30,11 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` starts the Electron app in development mode (hot reload for the renderer process).
-API keys for OpenAI/Claude and, if needed, the whisper.cpp path are then entered in the running
-app window via the settings dialog (gear icon, top right).
+`pnpm install` also builds the bundled `whisper-cli` binary and downloads the default model
+(one-time, skipped on subsequent installs once both are present). `pnpm dev` starts the Electron
+app in development mode (hot reload for the renderer process). API keys for OpenAI/Claude are
+then entered in the running app window via the settings dialog (gear icon, top right); the
+whisper.cpp binary/model fields there are optional overrides only.
 
 ### Other Scripts
 
@@ -83,8 +86,8 @@ restarted) are detected separately and flagged.
 A **timestamped transcript** is generated from an audio track, using either:
 
 - **OpenAI Whisper API** (requires an OpenAI API key)
-- **whisper.cpp (local)** – runs fully offline, requires a locally installed `whisper-cli`
-  binary and a downloaded model (`.bin`)
+- **whisper.cpp (local)** – runs fully offline using the bundled `whisper-cli` binary and
+  default model; a custom/larger model can optionally be selected in Settings
 
 A language can be hinted (Automatic/German/English). The transcript also appears as a subtitle
 track in the timeline.
@@ -132,7 +135,7 @@ manager afterwards.
 
 ### Settings
 
-**API keys** (OpenAI, Anthropic) as well as paths to the whisper.cpp binary and model are
-managed via the settings dialog (gear icon) and stored **locally** in Electron's `userData`
+**API keys** (OpenAI, Anthropic) as well as an optional override for the whisper.cpp model path
+are managed via the settings dialog (gear icon) and stored **locally** in Electron's `userData`
 (`settings.json`) — not in project files or environment variables. If a key is missing for the
 selected provider, a hint links directly to the relevant field.

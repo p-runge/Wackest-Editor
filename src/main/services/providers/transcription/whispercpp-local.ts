@@ -41,8 +41,7 @@ function runWhisperCli(
     proc.on('error', (err) => {
       reject(
         new Error(
-          `whisper.cpp-Binary konnte nicht gestartet werden ("${binaryPath}"): ${err.message}. ` +
-            `Bitte in den Einstellungen den Pfad prüfen (z.B. via "brew install whisper-cpp" installieren).`
+          `whisper.cpp-Binary konnte nicht gestartet werden ("${binaryPath}"): ${err.message}.`
         )
       )
     })
