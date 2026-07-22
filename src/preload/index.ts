@@ -164,6 +164,11 @@ const api = {
       const listener = (): void => callback()
       ipcRenderer.on(IpcChannels.menuSelectAll, listener)
       return () => ipcRenderer.removeListener(IpcChannels.menuSelectAll, listener)
+    },
+    onOpenSettings: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on(IpcChannels.menuOpenSettings, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.menuOpenSettings, listener)
     }
   }
 }

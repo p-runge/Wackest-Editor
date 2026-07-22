@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, shell } from 'electron'
+import { app, BrowserWindow, Notification, shell } from 'electron'
 import { autoUpdater, NsisUpdater } from 'electron-updater'
 import { IpcChannels, type UpdateStatus } from '@shared/types/ipc'
 
@@ -61,6 +61,16 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
 }
 
 export async function checkForUpdates(): Promise<void> {
+  // electron-updater silently no-ops checkForUpdates() (resolves without emitting a single event)
+  // whenever the app isn't packaged — otherwise a dev build's "Nach Updates suchen" button would
+  // appear to do nothing at all.
+  if (!app.isPackaged) {
+    setStatus({
+      state: 'error',
+      message: 'Auto-Update ist nur in gepackten Builds verfügbar, nicht im Dev-Modus.'
+    })
+    return
+  }
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {

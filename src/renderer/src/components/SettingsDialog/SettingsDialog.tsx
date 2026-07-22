@@ -10,14 +10,8 @@ import { Progress } from '../ui/progress'
 import { ScrollArea } from '../ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger
-} from '../ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog'
+import { modKeyLabel } from '../../lib/platform'
 import type { ModelInfo, UpdateStatus } from '@shared/types/ipc'
 
 const WHISPER_MODELS_URL = 'https://huggingface.co/ggerganov/whisper.cpp/tree/main'
@@ -96,6 +90,10 @@ function SettingsDialog(): React.JSX.Element {
   useEffect(() => {
     return window.api.updates.onStateChanged(setUpdateStatus)
   }, [])
+
+  useEffect(() => {
+    return window.api.menu.onOpenSettings(() => openSettings())
+  }, [openSettings])
 
   useEffect(() => {
     return window.api.models.onDownloadProgress(({ filename, progress }) => {
@@ -223,7 +221,7 @@ function SettingsDialog(): React.JSX.Element {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => (open ? openSettings() : closeSettings())}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="Einstellungen">
+        <Button variant="ghost" size="icon" title={`Einstellungen (${modKeyLabel}+,)`}>
           <Settings2 />
         </Button>
       </DialogTrigger>
@@ -237,252 +235,274 @@ function SettingsDialog(): React.JSX.Element {
       >
         <DialogHeader>
           <DialogTitle>Einstellungen</DialogTitle>
-          <DialogDescription>API-Keys und lokale Modelle für Transkription.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="openai-key">OpenAI API-Key</Label>
-            <Input
-              id="openai-key"
-              type="password"
-              value={settings.openaiApiKey ?? ''}
-              placeholder="sk-..."
-              onChange={(e) => void update({ openaiApiKey: e.target.value })}
-            />
-            {openaiKeyMessage && <p className="text-xs text-warning">{openaiKeyMessage}</p>}
-          </div>
+        <Tabs defaultValue="api-keys">
+          <TabsList>
+            <TabsTrigger value="api-keys">API Keys</TabsTrigger>
+            <TabsTrigger value="language-models">Language Models</TabsTrigger>
+            <TabsTrigger value="updates">Updates</TabsTrigger>
+          </TabsList>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="anthropic-key">Anthropic (Claude) API-Key</Label>
-            <Input
-              id="anthropic-key"
-              type="password"
-              value={settings.anthropicApiKey ?? ''}
-              placeholder="sk-ant-..."
-              onChange={(e) => void update({ anthropicApiKey: e.target.value })}
-            />
-            {anthropicKeyMessage && <p className="text-xs text-warning">{anthropicKeyMessage}</p>}
-          </div>
+          <TabsContent value="api-keys" className="flex min-h-[28rem] flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="openai-key">OpenAI API-Key</Label>
+              <Input
+                id="openai-key"
+                type="password"
+                value={settings.openaiApiKey ?? ''}
+                placeholder="sk-..."
+                onChange={(e) => void update({ openaiApiKey: e.target.value })}
+              />
+              {openaiKeyMessage && <p className="text-xs text-warning">{openaiKeyMessage}</p>}
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Transkriptionsmodell (whisper.cpp, lokal)</Label>
-            {effectiveModelLabel && (
-              <p className="text-xs text-muted-foreground">
-                Aktives Modell: <span className="font-medium">{effectiveModelLabel}</span>
-              </p>
-            )}
-            <Tabs defaultValue="models">
-              <TabsList>
-                <TabsTrigger value="models">Modelle herunterladen</TabsTrigger>
-                <TabsTrigger value="advanced">Erweitert: eigene Modelldatei</TabsTrigger>
-              </TabsList>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="anthropic-key">Anthropic (Claude) API-Key</Label>
+              <Input
+                id="anthropic-key"
+                type="password"
+                value={settings.anthropicApiKey ?? ''}
+                placeholder="sk-ant-..."
+                onChange={(e) => void update({ anthropicApiKey: e.target.value })}
+              />
+              {anthropicKeyMessage && <p className="text-xs text-warning">{anthropicKeyMessage}</p>}
+            </div>
+          </TabsContent>
 
-              <TabsContent value="models" className="flex flex-col gap-1.5">
-                {settings.whisperCppModelPath && (
-                  <p className="text-xs leading-relaxed text-warning">
-                    Aktuell ist ein eigenes lokales Modell aktiv (Tab &quot;Erweitert&quot;) — eine
-                    Auswahl hier übernimmt sofort die Kontrolle und deaktiviert es.
-                  </p>
-                )}
-                <Select
-                  value={settings.selectedModelFilename ?? bundledFilename ?? ''}
-                  onValueChange={(value) =>
-                    void update({
-                      selectedModelFilename: value === bundledFilename ? undefined : value,
-                      whisperCppModelPath: undefined
-                    })
-                  }
-                >
-                  <SelectTrigger id="model-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bundledFilename && (
-                      <SelectItem value={bundledFilename}>{bundledFilename}</SelectItem>
-                    )}
-                    {otherDownloadedModels.map((model) => (
-                      <SelectItem key={model.filename} value={model.filename}>
-                        {model.filename} ({formatModelSize(model.sizeBytes)})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {bundledFilename ?? 'Ein kleines Standardmodell'} ist bereits mitgeliefert. Für
-                  höhere Genauigkeit (auf Kosten von Geschwindigkeit und Downloadgröße) weitere
-                  Modelle von{' '}
-                  <a
-                    href={WHISPER_MODELS_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary underline-offset-4 hover:underline"
-                  >
-                    Huggingface
-                  </a>{' '}
-                  laden:
+          <TabsContent value="language-models" className="flex min-h-[28rem] flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label>Transkriptionsmodell (whisper.cpp, lokal)</Label>
+              {effectiveModelLabel && (
+                <p className="text-xs text-muted-foreground">
+                  Aktives Modell: <span className="font-medium">{effectiveModelLabel}</span>
                 </p>
+              )}
+              <Tabs defaultValue="models">
+                <TabsList>
+                  <TabsTrigger value="models">Modelle herunterladen</TabsTrigger>
+                  <TabsTrigger value="advanced">Erweitert: eigene Modelldatei</TabsTrigger>
+                </TabsList>
 
-                <ScrollArea className="h-40 rounded-md border border-border">
-                  <div className="flex flex-col divide-y divide-border">
-                    {catalogLoading && (
-                      <p className="p-3 text-xs text-muted-foreground">Lade Modellliste…</p>
-                    )}
-                    {catalogError && <p className="p-3 text-xs text-destructive">{catalogError}</p>}
-                    {models.map((model) => {
-                      const progress = downloadProgress[model.filename]
-                      const remainingSeconds =
-                        downloadRemaining[model.filename] ??
-                        model.sizeBytes / ASSUMED_DOWNLOAD_BYTES_PER_SEC
-                      return (
-                        <div
-                          key={model.filename}
-                          className="flex items-center justify-between gap-2 p-2"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm">{model.filename}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatModelSize(model.sizeBytes)} ·{' '}
-                              {progress !== undefined
-                                ? `noch ${formatClock(remainingSeconds)}`
-                                : formatEstimatedDownloadTime(model.sizeBytes)}
-                              {model.bundled && ' · mitgeliefert, Standard'}
-                            </p>
-                            {progress !== undefined && (
-                              <Progress value={progress * 100} className="mt-1" />
-                            )}
-                          </div>
-                          {progress !== undefined ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleCancelDownload(model.filename)}
-                            >
-                              Abbrechen
-                            </Button>
-                          ) : model.downloaded ? (
-                            <div className="flex items-center gap-1">
-                              <span className="text-xs text-muted-foreground">Heruntergeladen</span>
-                              {!model.bundled && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title="Entfernen"
-                                  onClick={() => void handleDeleteDownloaded(model.filename)}
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
+                <TabsContent value="models" className="flex flex-col gap-1.5">
+                  {settings.whisperCppModelPath && (
+                    <p className="text-xs leading-relaxed text-warning">
+                      Aktuell ist ein eigenes lokales Modell aktiv (Tab &quot;Erweitert&quot;) —
+                      eine Auswahl hier übernimmt sofort die Kontrolle und deaktiviert es.
+                    </p>
+                  )}
+                  <Select
+                    value={settings.selectedModelFilename ?? bundledFilename ?? ''}
+                    onValueChange={(value) =>
+                      void update({
+                        selectedModelFilename: value === bundledFilename ? undefined : value,
+                        whisperCppModelPath: undefined
+                      })
+                    }
+                  >
+                    <SelectTrigger id="model-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bundledFilename && (
+                        <SelectItem value={bundledFilename}>{bundledFilename}</SelectItem>
+                      )}
+                      {otherDownloadedModels.map((model) => (
+                        <SelectItem key={model.filename} value={model.filename}>
+                          {model.filename} ({formatModelSize(model.sizeBytes)})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {bundledFilename ?? 'Ein kleines Standardmodell'} ist bereits mitgeliefert. Für
+                    höhere Genauigkeit (auf Kosten von Geschwindigkeit und Downloadgröße) weitere
+                    Modelle von{' '}
+                    <a
+                      href={WHISPER_MODELS_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      Huggingface
+                    </a>{' '}
+                    laden:
+                  </p>
+
+                  <ScrollArea className="h-40 rounded-md border border-border">
+                    <div className="flex flex-col divide-y divide-border">
+                      {catalogLoading && (
+                        <p className="p-3 text-xs text-muted-foreground">Lade Modellliste…</p>
+                      )}
+                      {catalogError && (
+                        <p className="p-3 text-xs text-destructive">{catalogError}</p>
+                      )}
+                      {models.map((model) => {
+                        const progress = downloadProgress[model.filename]
+                        const remainingSeconds =
+                          downloadRemaining[model.filename] ??
+                          model.sizeBytes / ASSUMED_DOWNLOAD_BYTES_PER_SEC
+                        return (
+                          <div
+                            key={model.filename}
+                            className="flex items-center justify-between gap-2 p-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm">{model.filename}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatModelSize(model.sizeBytes)} ·{' '}
+                                {progress !== undefined
+                                  ? `noch ${formatClock(remainingSeconds)}`
+                                  : formatEstimatedDownloadTime(model.sizeBytes)}
+                                {model.bundled && ' · mitgeliefert, Standard'}
+                              </p>
+                              {progress !== undefined && (
+                                <Progress value={progress * 100} className="mt-1" />
                               )}
                             </div>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void handleDownload(model.filename)}
-                            >
-                              Laden
-                            </Button>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
+                            {progress !== undefined ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleCancelDownload(model.filename)}
+                              >
+                                Abbrechen
+                              </Button>
+                            ) : model.downloaded ? (
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground">
+                                  Heruntergeladen
+                                </span>
+                                {!model.bundled && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Entfernen"
+                                    onClick={() => void handleDeleteDownloaded(model.filename)}
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleDownload(model.filename)}
+                              >
+                                Laden
+                              </Button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </ScrollArea>
+                </TabsContent>
 
-              <TabsContent value="advanced" className="flex flex-col gap-1.5">
-                <Label htmlFor="whisper-model">Eigenes whisper.cpp Modell (.bin, optional)</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="whisper-model"
-                    value={settings.whisperCppModelPath ?? ''}
-                    placeholder="Modellauswahl oben verwenden"
-                    onChange={(e) => void update({ whisperCppModelPath: e.target.value })}
-                  />
-                  <Button variant="outline" onClick={() => void pickWhisperModel()}>
-                    Durchsuchen
-                  </Button>
-                  {settings.whisperCppModelPath && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Eigenes Modell entfernen"
-                      onClick={() => void update({ whisperCppModelPath: undefined })}
-                    >
-                      <Trash2 className="size-4" />
+                <TabsContent value="advanced" className="flex flex-col gap-1.5">
+                  <Label htmlFor="whisper-model">Eigenes whisper.cpp Modell (.bin, optional)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="whisper-model"
+                      value={settings.whisperCppModelPath ?? ''}
+                      placeholder="Modellauswahl oben verwenden"
+                      onChange={(e) => void update({ whisperCppModelPath: e.target.value })}
+                    />
+                    <Button variant="outline" onClick={() => void pickWhisperModel()}>
+                      Durchsuchen
                     </Button>
-                  )}
-                </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  Überschreibt die Modellauswahl im Tab &quot;Modelle herunterladen&quot;, bis dort
-                  erneut ein Modell ausgewählt wird.
-                </p>
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label>Updates</Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void handleCheckForUpdates()}
-                disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
-              >
-                Nach Updates suchen
-              </Button>
+                    {settings.whisperCppModelPath && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Eigenes Modell entfernen"
+                        onClick={() => void update({ whisperCppModelPath: undefined })}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Überschreibt die Modellauswahl im Tab &quot;Modelle herunterladen&quot;, bis
+                    dort erneut ein Modell ausgewählt wird.
+                  </p>
+                </TabsContent>
+              </Tabs>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {appVersion ? `Aktuelle Version: ${appVersion}` : 'Version wird geladen…'}
-            </p>
-            {updateStatus.state === 'checking' && (
-              <p className="text-xs text-muted-foreground">Suche nach Updates…</p>
-            )}
-            {updateStatus.state === 'not-available' && (
-              <p className="text-xs text-muted-foreground">Du verwendest die aktuelle Version.</p>
-            )}
-            {updateStatus.state === 'available' && (
+          </TabsContent>
+
+          <TabsContent value="updates" className="flex min-h-[28rem] flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Version {updateStatus.version} ist verfügbar.
-                </p>
-                {updateStatus.canAutoInstall ? (
-                  <span className="text-xs text-muted-foreground">Wird heruntergeladen…</span>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void window.api.updates.openDownloadPage()}
-                  >
-                    Herunterladen
-                  </Button>
-                )}
-              </div>
-            )}
-            {updateStatus.state === 'downloading' && (
-              <Progress value={updateStatus.progress * 100} />
-            )}
-            {updateStatus.state === 'downloaded' && (
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Version {updateStatus.version} ist bereit.
-                </p>
+                <Label>Updates</Label>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => void window.api.updates.install()}
+                  onClick={() => void handleCheckForUpdates()}
+                  disabled={
+                    updateStatus.state === 'checking' || updateStatus.state === 'downloading'
+                  }
                 >
-                  Jetzt neu starten
+                  Nach Updates suchen
                 </Button>
               </div>
-            )}
-            {updateStatus.state === 'error' && (
-              <p className="text-xs text-destructive">{updateStatus.message}</p>
-            )}
-          </div>
-        </div>
+              <p className="text-xs text-muted-foreground">
+                {appVersion ? `Aktuelle Version: ${appVersion}` : 'Version wird geladen…'}
+              </p>
+              {updateStatus.state === 'checking' && (
+                <p className="text-xs text-muted-foreground">Suche nach Updates…</p>
+              )}
+              {updateStatus.state === 'not-available' && (
+                <p className="text-xs text-muted-foreground">Du verwendest die aktuelle Version.</p>
+              )}
+              {updateStatus.state === 'available' && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Version {updateStatus.version} ist verfügbar.
+                  </p>
+                  {updateStatus.canAutoInstall ? (
+                    <span className="text-xs text-muted-foreground">Wird heruntergeladen…</span>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void window.api.updates.openDownloadPage()}
+                    >
+                      Herunterladen
+                    </Button>
+                  )}
+                </div>
+              )}
+              {updateStatus.state === 'downloading' && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-muted-foreground">
+                    Lädt Update herunter… {Math.round(updateStatus.progress * 100)}%
+                  </p>
+                  <Progress value={updateStatus.progress * 100} />
+                </div>
+              )}
+              {updateStatus.state === 'downloaded' && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Version {updateStatus.version} ist bereit.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void window.api.updates.install()}
+                  >
+                    Jetzt neu starten
+                  </Button>
+                </div>
+              )}
+              {updateStatus.state === 'error' && (
+                <p className="text-xs text-destructive">{updateStatus.message}</p>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   )

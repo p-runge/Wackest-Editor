@@ -40,7 +40,8 @@ export const IpcChannels = {
   updateStateChanged: 'update:state-changed',
   menuUndo: 'menu:undo',
   menuRedo: 'menu:redo',
-  menuSelectAll: 'menu:select-all'
+  menuSelectAll: 'menu:select-all',
+  menuOpenSettings: 'menu:open-settings'
 } as const
 
 export interface ProjectSaveArgs {

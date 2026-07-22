@@ -40,6 +40,14 @@ function setApplicationMenu(): void {
             submenu: [
               { role: 'about' },
               { type: 'separator' },
+              {
+                label: 'Einstellungen…',
+                accelerator: 'CmdOrCtrl+,',
+                click: (): void => {
+                  BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannels.menuOpenSettings)
+                }
+              },
+              { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
               { role: 'hide' },
@@ -53,7 +61,21 @@ function setApplicationMenu(): void {
       : []),
     {
       label: 'Datei',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit' }]
+      submenu: [
+        ...(isMac
+          ? ([{ role: 'close' }] satisfies MenuItemConstructorOptions[])
+          : ([
+              {
+                label: 'Einstellungen…',
+                accelerator: 'CmdOrCtrl+,',
+                click: (): void => {
+                  BrowserWindow.getFocusedWindow()?.webContents.send(IpcChannels.menuOpenSettings)
+                }
+              },
+              { type: 'separator' },
+              { role: 'quit' }
+            ] satisfies MenuItemConstructorOptions[]))
+      ]
     },
     {
       label: 'Bearbeiten',
