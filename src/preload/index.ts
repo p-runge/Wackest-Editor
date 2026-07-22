@@ -33,7 +33,8 @@ import type {
   ModelDownloadArgs,
   ModelDownloadProgressEvent,
   ModelDownloadCancelArgs,
-  ModelDeleteArgs
+  ModelDeleteArgs,
+  UpdateStatus
 } from '@shared/types/ipc'
 
 const api = {
@@ -129,6 +130,17 @@ const api = {
       ipcRenderer.invoke(IpcChannels.modelsDownloadCancel, args),
     delete: (args: ModelDeleteArgs): Promise<void> =>
       ipcRenderer.invoke(IpcChannels.modelsDelete, args)
+  },
+  updates: {
+    check: (): Promise<void> => ipcRenderer.invoke(IpcChannels.updateCheck),
+    install: (): Promise<void> => ipcRenderer.invoke(IpcChannels.updateInstall),
+    openDownloadPage: (): Promise<void> => ipcRenderer.invoke(IpcChannels.updateOpenDownloadPage),
+    getVersion: (): Promise<string> => ipcRenderer.invoke(IpcChannels.updateGetVersion),
+    onStateChanged: (callback: (status: UpdateStatus) => void): (() => void) => {
+      const listener = (_event: unknown, status: UpdateStatus): void => callback(status)
+      ipcRenderer.on(IpcChannels.updateStateChanged, listener)
+      return () => ipcRenderer.removeListener(IpcChannels.updateStateChanged, listener)
+    }
   },
   system: {
     copyToClipboard: (text: string): void => clipboard.writeText(text)

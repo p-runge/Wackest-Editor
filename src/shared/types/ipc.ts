@@ -33,6 +33,11 @@ export const IpcChannels = {
   modelsDownloadProgress: 'models:download-progress',
   modelsDownloadCancel: 'models:download-cancel',
   modelsDelete: 'models:delete',
+  updateCheck: 'update:check',
+  updateInstall: 'update:install',
+  updateOpenDownloadPage: 'update:open-download-page',
+  updateGetVersion: 'update:get-version',
+  updateStateChanged: 'update:state-changed',
   menuUndo: 'menu:undo',
   menuRedo: 'menu:redo',
   menuSelectAll: 'menu:select-all'
@@ -197,3 +202,15 @@ export interface ModelDownloadCancelArgs {
 export interface ModelDeleteArgs {
   filename: string
 }
+
+// canAutoInstall is false on macOS: the app isn't code-signed, and Squirrel.Mac (electron-updater's
+// macOS backend) refuses to silently install unsigned updates, so the renderer must fall back to
+// opening the GitHub release page instead of calling updates.install().
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; version: string; canAutoInstall: boolean }
+  | { state: 'downloading'; progress: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'not-available' }
+  | { state: 'error'; message: string }

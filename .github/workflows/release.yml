@@ -19,12 +19,18 @@ jobs:
             asset-globs: |
               dist/*.dmg
               dist/*.zip
+              dist/latest-mac.yml
           - os: windows-latest
             build-script: build:win
-            asset-globs: dist/*-setup.exe
+            asset-globs: |
+              dist/*-setup.exe
+              dist/latest.yml
+              dist/*.exe.blockmap
           - os: ubuntu-latest
             build-script: build:linux
-            asset-globs: dist/*.AppImage
+            asset-globs: |
+              dist/*.AppImage
+              dist/latest-linux.yml
 
     runs-on: ${{ matrix.os }}
 

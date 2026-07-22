@@ -11,7 +11,9 @@ import { registerHeatmapIpc } from './ipc/heatmap'
 import { registerExportIpc } from './ipc/export'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerModelsIpc } from './ipc/models'
+import { registerUpdatesIpc } from './ipc/updates'
 import { registerMediaProtocolHandler } from './services/media-protocol'
+import { initAutoUpdater, checkForUpdates } from './services/updater'
 import { MEDIA_URL_SCHEME } from '@shared/types/media-url'
 import { IpcChannels } from '@shared/types/ipc'
 
@@ -94,9 +96,13 @@ function setApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+// Held at module scope (rather than local to createWindow) so the updater can push status
+// updates to it independent of window creation.
+let mainWindow: BrowserWindow | null = null
+
 function createWindow(): void {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
@@ -107,13 +113,14 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  mainWindow = window
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.maximize()
-    mainWindow.show()
+  window.on('ready-to-show', () => {
+    window.maximize()
+    window.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  window.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
@@ -121,9 +128,9 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    window.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -156,8 +163,12 @@ app.whenReady().then(() => {
   registerExportIpc()
   registerSettingsIpc()
   registerModelsIpc()
+  registerUpdatesIpc()
 
   createWindow()
+
+  initAutoUpdater(() => mainWindow)
+  if (app.isPackaged) void checkForUpdates()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

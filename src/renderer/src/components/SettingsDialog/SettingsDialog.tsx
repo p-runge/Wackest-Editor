@@ -18,7 +18,7 @@ import {
   DialogDescription,
   DialogTrigger
 } from '../ui/dialog'
-import type { ModelInfo } from '@shared/types/ipc'
+import type { ModelInfo, UpdateStatus } from '@shared/types/ipc'
 
 const WHISPER_MODELS_URL = 'https://huggingface.co/ggerganov/whisper.cpp/tree/main'
 
@@ -82,9 +82,20 @@ function SettingsDialog(): React.JSX.Element {
   // progress bar itself still updates live, only this derived number is throttled.
   const downloadRemainingUpdatedAtRef = useRef<Record<string, number>>({})
 
+  const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: 'idle' })
+
   useEffect(() => {
     if (!loaded) void load()
   }, [loaded, load])
+
+  useEffect(() => {
+    void window.api.updates.getVersion().then(setAppVersion)
+  }, [])
+
+  useEffect(() => {
+    return window.api.updates.onStateChanged(setUpdateStatus)
+  }, [])
 
   useEffect(() => {
     return window.api.models.onDownloadProgress(({ filename, progress }) => {
@@ -169,6 +180,14 @@ function SettingsDialog(): React.JSX.Element {
     )
     if (settings.selectedModelFilename === filename) {
       await update({ selectedModelFilename: undefined })
+    }
+  }
+
+  const handleCheckForUpdates = async (): Promise<void> => {
+    try {
+      await window.api.updates.check()
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -401,6 +420,67 @@ function SettingsDialog(): React.JSX.Element {
                 </p>
               </TabsContent>
             </Tabs>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Updates</Label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCheckForUpdates()}
+                disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
+              >
+                Nach Updates suchen
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {appVersion ? `Aktuelle Version: ${appVersion}` : 'Version wird geladen…'}
+            </p>
+            {updateStatus.state === 'checking' && (
+              <p className="text-xs text-muted-foreground">Suche nach Updates…</p>
+            )}
+            {updateStatus.state === 'not-available' && (
+              <p className="text-xs text-muted-foreground">Du verwendest die aktuelle Version.</p>
+            )}
+            {updateStatus.state === 'available' && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Version {updateStatus.version} ist verfügbar.
+                </p>
+                {updateStatus.canAutoInstall ? (
+                  <span className="text-xs text-muted-foreground">Wird heruntergeladen…</span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void window.api.updates.openDownloadPage()}
+                  >
+                    Herunterladen
+                  </Button>
+                )}
+              </div>
+            )}
+            {updateStatus.state === 'downloading' && (
+              <Progress value={updateStatus.progress * 100} />
+            )}
+            {updateStatus.state === 'downloaded' && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Version {updateStatus.version} ist bereit.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void window.api.updates.install()}
+                >
+                  Jetzt neu starten
+                </Button>
+              </div>
+            )}
+            {updateStatus.state === 'error' && (
+              <p className="text-xs text-destructive">{updateStatus.message}</p>
+            )}
           </div>
         </div>
       </DialogContent>

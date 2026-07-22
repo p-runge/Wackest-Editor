@@ -15,6 +15,10 @@ asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
   - '**/node_modules/ffprobe-static/**'
 beforePack: ./scripts/before-pack.cjs
+publish:
+  provider: github
+  owner: p-runge
+  repo: Wackest-Editor
 win:
   executableName: wackest-editor
   target:
