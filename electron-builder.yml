@@ -18,7 +18,7 @@ beforePack: ./scripts/before-pack.cjs
 publish:
   provider: github
   owner: p-runge
-  repo: Wackest-Editor
+  repo: wackest-editor
 win:
   executableName: wackest-editor
   target:

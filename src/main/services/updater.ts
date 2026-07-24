@@ -2,7 +2,7 @@ import { app, BrowserWindow, Notification, shell } from 'electron'
 import { autoUpdater, NsisUpdater } from 'electron-updater'
 import { IpcChannels, type UpdateStatus } from '@shared/types/ipc'
 
-const RELEASES_URL = 'https://github.com/p-runge/Wackest-Editor/releases/latest'
+const RELEASES_URL = 'https://github.com/p-runge/wackest-editor/releases/latest'
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
