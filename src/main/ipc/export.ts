@@ -11,7 +11,11 @@ import {
 // Per-format save-dialog extension and file-type filter.
 const FORMAT_OUTPUT: Record<ExportFormat, { extension: string; filter: { name: string } }> = {
   mp4: { extension: 'mp4', filter: { name: 'MP4 Video' } },
-  fcp7xml: { extension: 'xml', filter: { name: 'Final Cut Pro 7 XML (Premiere / Resolve)' } }
+  fcp7xml: { extension: 'xml', filter: { name: 'Final Cut Pro 7 XML (Premiere / Resolve)' } },
+  'fcp7xml-multicam': {
+    extension: 'xml',
+    filter: { name: 'Final Cut Pro 7 XML – Multicam (Premiere / Resolve)' }
+  }
 }
 
 // Strips characters that are illegal (or awkward, e.g. leading/trailing dots/spaces) in a

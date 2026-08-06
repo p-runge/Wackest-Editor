@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'url'
-import type { NleAsset, NleClip, NleTimeline } from './nle-timeline'
+import type { NleAsset, NleClip, NleTimeline, NleTrack } from './nle-timeline'
 
 /**
  * Serializes an `NleTimeline` to Final Cut Pro 7 XML (xmeml v5) — the interchange format both
@@ -73,7 +73,7 @@ function fileElement(asset: NleAsset, timeline: NleTimeline, alreadyEmitted: boo
 
 function clipItem(
   clip: NleClip,
-  index: number,
+  clipId: string,
   kind: 'video' | 'audio',
   asset: NleAsset,
   timeline: NleTimeline,
@@ -98,7 +98,7 @@ function clipItem(
       : ''
 
   return (
-    `<clipitem id="clipitem-${kind === 'video' ? 'v' : 'a'}-${index}">` +
+    `<clipitem id="${clipId}">` +
     `<name>${escapeXml(asset.label)}</name>` +
     `<enabled>TRUE</enabled>` +
     `<duration>${mediaDurationFrames}</duration>` +
@@ -113,27 +113,54 @@ function clipItem(
   )
 }
 
+function trackElement(
+  track: NleTrack,
+  trackIndex: number,
+  kind: 'video' | 'audio',
+  assetById: Map<string, NleAsset>,
+  timeline: NleTimeline,
+  emittedFileIds: Set<string>
+): string {
+  const prefix = kind === 'video' ? 'v' : 'a'
+  const clipItems = track.clips
+    .map((clip, clipIndex) => {
+      const asset = assetById.get(clip.sourceId)
+      if (!asset) return ''
+      return clipItem(
+        clip,
+        `clipitem-${prefix}${trackIndex}-${clipIndex}`,
+        kind,
+        asset,
+        timeline,
+        emittedFileIds
+      )
+    })
+    .join('')
+
+  return (
+    `<track>` +
+    clipItems +
+    `<enabled>${track.enabled ? 'TRUE' : 'FALSE'}</enabled>` +
+    `<locked>FALSE</locked>` +
+    `</track>`
+  )
+}
+
 export function serializeFcp7Xml(timeline: NleTimeline): string {
   const fps = effectiveFps(timeline)
   const totalFrames = Math.round(timeline.totalDurationSec * fps)
   const rate = rateBlock(timeline.timebase, timeline.ntsc)
   const assetById = new Map(timeline.assets.map((a) => [a.sourceId, a]))
   // Tracks the file ids whose full <file> definition has already been written, so later references
-  // become lightweight `<file id="..."/>` pointers (a file used on both tracks is defined once).
+  // become lightweight `<file id="..."/>` pointers (a file used on multiple tracks is defined once).
   const emittedFileIds = new Set<string>()
 
-  const videoClipItems = timeline.videoClips
-    .map((clip, i) => {
-      const asset = assetById.get(clip.sourceId)
-      return asset ? clipItem(clip, i, 'video', asset, timeline, emittedFileIds) : ''
-    })
+  // Tracks are emitted bottom-to-top, matching how the NleTimeline orders them (last = topmost).
+  const videoTracks = timeline.videoTracks
+    .map((track, i) => trackElement(track, i, 'video', assetById, timeline, emittedFileIds))
     .join('')
-
-  const audioClipItems = timeline.audioClips
-    .map((clip, i) => {
-      const asset = assetById.get(clip.sourceId)
-      return asset ? clipItem(clip, i, 'audio', asset, timeline, emittedFileIds) : ''
-    })
+  const audioTracks = timeline.audioTracks
+    .map((track, i) => trackElement(track, i, 'audio', assetById, timeline, emittedFileIds))
     .join('')
 
   return (
@@ -149,12 +176,12 @@ export function serializeFcp7Xml(timeline: NleTimeline): string {
     `<format><samplecharacteristics>${rate}` +
     `<width>${timeline.width}</width><height>${timeline.height}</height>` +
     `</samplecharacteristics></format>` +
-    `<track>${videoClipItems}</track>` +
+    videoTracks +
     `</video>` +
     `<audio>` +
     `<format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate>` +
     `</samplecharacteristics></format>` +
-    `<track>${audioClipItems}</track>` +
+    audioTracks +
     `</audio>` +
     `</media>` +
     `</sequence>` +

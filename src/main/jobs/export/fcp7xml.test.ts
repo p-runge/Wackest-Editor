@@ -9,11 +9,35 @@ function baseTimeline(overrides: Partial<NleTimeline> = {}): NleTimeline {
     ntsc: false,
     width: 1920,
     height: 1080,
-    videoClips: [
-      { sourceId: 'cam', timelineStartSec: 0, timelineEndSec: 5, sourceInSec: 10, sourceOutSec: 15 }
+    videoTracks: [
+      {
+        name: 'Video',
+        enabled: true,
+        clips: [
+          {
+            sourceId: 'cam',
+            timelineStartSec: 0,
+            timelineEndSec: 5,
+            sourceInSec: 10,
+            sourceOutSec: 15
+          }
+        ]
+      }
     ],
-    audioClips: [
-      { sourceId: 'cam', timelineStartSec: 0, timelineEndSec: 5, sourceInSec: 10, sourceOutSec: 15 }
+    audioTracks: [
+      {
+        name: 'Audio',
+        enabled: true,
+        clips: [
+          {
+            sourceId: 'cam',
+            timelineStartSec: 0,
+            timelineEndSec: 5,
+            sourceInSec: 10,
+            sourceOutSec: 15
+          }
+        ]
+      }
     ],
     assets: [
       {
@@ -92,5 +116,43 @@ describe('serializeFcp7Xml', () => {
     expect(xml).toContain('<name>A &amp; B &lt;clip&gt;</name>')
     // pathToFileURL percent-encodes spaces/&, so the raw ampersand should not appear in the path
     expect(xml).toContain('a%20&amp;%20b.mp4')
+  })
+
+  it('emits one track element per track with its enabled flag', () => {
+    const xml = serializeFcp7Xml(
+      baseTimeline({
+        audioTracks: [
+          {
+            name: 'Roh: cam',
+            enabled: false,
+            clips: [
+              {
+                sourceId: 'cam',
+                timelineStartSec: 0,
+                timelineEndSec: 5,
+                sourceInSec: 0,
+                sourceOutSec: 5
+              }
+            ]
+          },
+          {
+            name: 'Aktive Wahl (Audio)',
+            enabled: true,
+            clips: [
+              {
+                sourceId: 'cam',
+                timelineStartSec: 0,
+                timelineEndSec: 5,
+                sourceInSec: 0,
+                sourceOutSec: 5
+              }
+            ]
+          }
+        ]
+      })
+    )
+    // two audio tracks -> two <track> closers in the audio block: one muted, one enabled
+    expect(xml).toContain('<enabled>FALSE</enabled><locked>FALSE</locked>')
+    expect(xml).toContain('<enabled>TRUE</enabled><locked>FALSE</locked>')
   })
 })

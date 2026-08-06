@@ -32,8 +32,13 @@ const FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: string }
   },
   {
     value: 'fcp7xml',
-    label: 'Premiere / Resolve (XML)',
-    hint: 'Schnittdatei mit getrennten Video- und Audiospuren, die die Originalmedien referenziert – zur Weiterbearbeitung in Premiere Pro oder DaVinci Resolve.'
+    label: 'Premiere / Resolve – Schnitt (XML)',
+    hint: 'Der fertige Schnitt als Video- und Audiospur, die die Originalmedien referenziert – zur Weiterbearbeitung in Premiere Pro oder DaVinci Resolve.'
+  },
+  {
+    value: 'fcp7xml-multicam',
+    label: 'Premiere / Resolve – Multicam roh (XML)',
+    hint: 'Alle Rohquellen parallel auf der Sync-Timeline, plus die aktive Kamera-/Audio-Wahl als oberste Spur – zum freien Um-Wählen. Roh-Audiospuren sind stummgeschaltet, nur die aktive Wahl klingt.'
   }
 ]
 
