@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Film, Mic } from 'lucide-react'
 import type { Project, SourceClip } from '@shared/types/project'
-import { colorForSourceId } from '../../lib/colors'
+import { colorForGroupId } from '../../lib/colors'
+import { orderedGroupIds, type DeviceLane } from '../../lib/device-lanes'
 import { useResolvedSources } from '../../hooks/useResolvedSources'
 import { mapUnifiedTimeToLocal } from '../../lib/timeline-edit'
 import { isTypingTarget } from '../../lib/dom'
@@ -9,10 +10,15 @@ import { isTypingTarget } from '../../lib/dom'
 interface CameraSwitcherProps {
   project: Project
   playheadSec: number
-  videoSources: SourceClip[]
-  audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }>
+  videoLanes: DeviceLane[]
+  audioLanes: DeviceLane[]
   setActiveVideoAt: (atSec: number, sourceId: string) => Promise<void>
   setActiveAudioAt: (atSec: number, sourceId: string) => Promise<void>
+}
+
+/** The member of a group whose footage covers `atSec` (a group's clips never overlap). */
+function memberCovering(members: SourceClip[], atSec: number): SourceClip | undefined {
+  return members.find((m) => mapUnifiedTimeToLocal(m, atSec) !== null)
 }
 
 function Tile({
@@ -69,14 +75,14 @@ function SwitcherRow({
   icon,
   items,
   activeId,
-  sourceIds,
+  groupIds,
   keyHint,
   onSelect
 }: {
   icon: React.ReactNode
   items: Array<{ id: string; label: string; hasCoverage: boolean }>
   activeId: string | undefined
-  sourceIds: string[]
+  groupIds: string[]
   keyHint: (index: number) => string
   onSelect: (id: string) => void
 }): React.JSX.Element | null {
@@ -92,7 +98,7 @@ function SwitcherRow({
             key={item.id}
             index={index}
             label={item.label}
-            color={colorForSourceId(item.id, sourceIds)}
+            color={colorForGroupId(item.id, groupIds)}
             active={item.id === activeId}
             disabled={!item.hasCoverage}
             shortcutHint={keyHint(index)}
@@ -107,53 +113,54 @@ function SwitcherRow({
 function CameraSwitcher({
   project,
   playheadSec,
-  videoSources,
-  audioRows,
+  videoLanes,
+  audioLanes,
   setActiveVideoAt,
   setActiveAudioAt
 }: CameraSwitcherProps): React.JSX.Element | null {
   const { activeVideoId, activeAudioId } = useResolvedSources(project, playheadSec)
   const [audioFollowsVideo, setAudioFollowsVideo] = useState(false)
-  const sourceIds = project.sources.map((s) => s.id)
+  const groupIds = orderedGroupIds(project)
 
-  // A track can only be switched to while it actually has footage at the current playhead —
-  // otherwise there'd be nothing to show and the resolution logic would just fall through to
-  // whatever else covers this instant anyway (see resolveVideoSourceId's graceful fallback).
-  const hasCoverage = (source: SourceClip): boolean =>
-    mapUnifiedTimeToLocal(source, playheadSec) !== null
+  // The group id that currently owns the active video / audio source.
+  const activeVideoGroupId = videoLanes.find((l) => l.members.some((m) => m.id === activeVideoId))
+    ?.group.id
+  const activeAudioGroupId = audioLanes.find((l) => l.members.some((m) => m.id === activeAudioId))
+    ?.group.id
 
   const handleCameraSelect = useCallback(
-    (sourceId: string): void => {
-      const source = videoSources.find((s) => s.id === sourceId)
-      if (!source || mapUnifiedTimeToLocal(source, playheadSec) === null) return
-      void setActiveVideoAt(playheadSec, source.id)
-      if (audioFollowsVideo && source.probed.hasAudio) {
-        void setActiveAudioAt(playheadSec, source.id)
+    (groupId: string): void => {
+      const lane = videoLanes.find((l) => l.group.id === groupId)
+      const member = lane && memberCovering(lane.members, playheadSec)
+      if (!member) return
+      void setActiveVideoAt(playheadSec, member.id)
+      if (audioFollowsVideo && member.probed.hasAudio) {
+        void setActiveAudioAt(playheadSec, member.id)
       }
     },
-    [playheadSec, audioFollowsVideo, videoSources, setActiveVideoAt, setActiveAudioAt]
+    [playheadSec, audioFollowsVideo, videoLanes, setActiveVideoAt, setActiveAudioAt]
   )
 
   const handleAudioSelect = useCallback(
-    (sourceId: string): void => {
-      const source = audioRows.find((row) => row.source.id === sourceId)?.source
-      if (!source || mapUnifiedTimeToLocal(source, playheadSec) === null) return
-      void setActiveAudioAt(playheadSec, sourceId)
+    (groupId: string): void => {
+      const lane = audioLanes.find((l) => l.group.id === groupId)
+      const member = lane && memberCovering(lane.members, playheadSec)
+      if (!member) return
+      void setActiveAudioAt(playheadSec, member.id)
     },
-    [playheadSec, audioRows, setActiveAudioAt]
+    [playheadSec, audioLanes, setActiveAudioAt]
   )
 
-  // Flipping the toggle only changes what *future* camera switches do, which gives no
-  // feedback that anything happened. Also sync audio to whichever camera is active right now,
-  // so turning it on has an immediate, visible effect on the "Aktives Audio" track.
+  // Flipping the toggle only changes what *future* camera switches do, which gives no feedback that
+  // anything happened. Also sync audio to whichever camera group is active right now, so turning it
+  // on has an immediate, visible effect on the "Aktives Audio" track.
   const handleToggleAudioFollowsVideo = (): void => {
     setAudioFollowsVideo((current) => {
       const next = !current
-      if (next) {
-        const activeVideo = videoSources.find((s) => s.id === activeVideoId)
-        if (activeVideo?.probed.hasAudio && activeAudioId !== activeVideoId) {
-          void setActiveAudioAt(playheadSec, activeVideo.id)
-        }
+      if (next && activeVideoGroupId && activeVideoGroupId !== activeAudioGroupId) {
+        const lane = videoLanes.find((l) => l.group.id === activeVideoGroupId)
+        const member = lane && memberCovering(lane.members, playheadSec)
+        if (member?.probed.hasAudio) void setActiveAudioAt(playheadSec, member.id)
       }
       return next
     })
@@ -170,46 +177,50 @@ function CameraSwitcher({
 
       const index = Number(digitMatch[1]) - 1
       if (e.shiftKey) {
-        const row = audioRows[index]
-        if (!row) return
+        const lane = audioLanes[index]
+        if (!lane) return
         e.preventDefault()
-        handleAudioSelect(row.source.id)
+        handleAudioSelect(lane.group.id)
       } else {
-        const source = videoSources[index]
-        if (!source) return
+        const lane = videoLanes[index]
+        if (!lane) return
         e.preventDefault()
-        handleCameraSelect(source.id)
+        handleCameraSelect(lane.group.id)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [videoSources, audioRows, handleCameraSelect, handleAudioSelect])
+  }, [videoLanes, audioLanes, handleCameraSelect, handleAudioSelect])
 
   return (
     <div className="flex flex-col gap-2 p-2.5">
       <SwitcherRow
         icon={<Film className="size-3.5" />}
-        items={videoSources.map((s) => ({ id: s.id, label: s.label, hasCoverage: hasCoverage(s) }))}
-        activeId={activeVideoId}
-        sourceIds={sourceIds}
+        items={videoLanes.map((l) => ({
+          id: l.group.id,
+          label: l.group.name,
+          hasCoverage: memberCovering(l.members, playheadSec) !== undefined
+        }))}
+        activeId={activeVideoGroupId}
+        groupIds={groupIds}
         keyHint={(i) => `Taste ${i + 1}`}
         onSelect={handleCameraSelect}
       />
       <SwitcherRow
         icon={<Mic className="size-3.5" />}
-        items={audioRows.map(({ source }) => ({
-          id: source.id,
-          label: source.label,
-          hasCoverage: hasCoverage(source)
+        items={audioLanes.map((l) => ({
+          id: l.group.id,
+          label: l.group.name,
+          hasCoverage: memberCovering(l.members, playheadSec) !== undefined
         }))}
-        activeId={activeAudioId}
-        sourceIds={sourceIds}
+        activeId={activeAudioGroupId}
+        groupIds={groupIds}
         keyHint={(i) => `Umschalt+${i + 1}`}
         onSelect={handleAudioSelect}
       />
 
       <label className="flex cursor-pointer items-center justify-between gap-2 border-t border-border/40 pt-2 text-xs text-muted-foreground">
-        <span title="Wenn an: ein Kamera-Wechsel schaltet auch das aktive Audio auf diese Quelle um (wirkt sofort auch auf die gerade aktive Kamera).">
+        <span title="Wenn an: ein Kamera-Wechsel schaltet auch das aktive Audio auf dieses Gerät um (wirkt sofort auch auf die gerade aktive Kamera).">
           Ton folgt Bild
         </span>
         <button

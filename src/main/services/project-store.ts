@@ -48,6 +48,13 @@ function migrateProjectData(parsed: unknown): unknown {
     delete providerConfig.stt
   }
 
+  // v4 -> v5: sources are grouped into device groups. Just ensure the field exists so the schema
+  // parses; the renderer runs `ensureDeviceGroups` on open to actually assign groups (idempotent),
+  // which is also what populates groups for these migrated projects.
+  if (!('deviceGroups' in data)) {
+    data.deviceGroups = []
+  }
+
   data.schemaVersion = SCHEMA_VERSION
   return data
 }

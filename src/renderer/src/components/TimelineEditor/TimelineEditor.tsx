@@ -13,7 +13,8 @@ import PreviewPlayer from './PreviewPlayer'
 import PreviewTransportControls from './PreviewTransportControls'
 import CameraSwitcher from './CameraSwitcher'
 import CutTool from './CutTool'
-import { colorForSourceId } from '../../lib/colors'
+import { colorForGroupId } from '../../lib/colors'
+import { deviceLanes, orderedGroupIds } from '../../lib/device-lanes'
 import { deriveGlobalHeatmap } from '../../lib/heatmap'
 import {
   mapUnifiedTimeToLocal,
@@ -258,7 +259,7 @@ function TimelineEditor(): React.JSX.Element | null {
     )
   }
 
-  const sourceIds = project.sources.map((s) => s.id)
+  const groupIds = orderedGroupIds(project)
   const isCut = activeTool === 'cut'
   // One shared program timeline for both modes — Kamerawechsel and Schnitt render the exact
   // same chunk-mapped lanes/axis, so edits made in either are immediately visible in the other.
@@ -399,13 +400,14 @@ function TimelineEditor(): React.JSX.Element | null {
     previewResizeDragRef.current = null
   }
 
-  const videoSources = project.sources.filter((s) => s.kind === 'video')
-  const audioRows: Array<{ source: SourceClip; linkedVideoLabel?: string }> = project.sources
-    .filter((s) => s.kind === 'audio' || (s.kind === 'video' && s.probed.hasAudio))
-    .map((source) => ({
-      source,
-      linkedVideoLabel: source.kind === 'video' ? source.label : undefined
-    }))
+  // One lane per device group (all clips of a device share a lane); see lib/device-lanes.
+  const videoLanes = deviceLanes(project, 'video')
+  const audioLanes = deviceLanes(project, 'audio')
+
+  // The member of a group whose footage covers a given content time — a group's clips never overlap,
+  // so at most one matches. Used to resolve a lane-level action (set active / coverage) to a source.
+  const memberCovering = (members: SourceClip[], contentSec: number): SourceClip | undefined =>
+    members.find((m) => mapUnifiedTimeToLocal(m, contentSec) !== null)
 
   // Waveform clicks arrive in placement time; Kamerawechsel edits (set active source) apply to
   // content time. In a cut gap there's no content — the click just seeks instead of editing.
@@ -451,8 +453,8 @@ function TimelineEditor(): React.JSX.Element | null {
             <CameraSwitcher
               project={project}
               playheadSec={playheadContentSec ?? -1}
-              videoSources={videoSources}
-              audioRows={audioRows}
+              videoLanes={videoLanes}
+              audioLanes={audioLanes}
               setActiveVideoAt={setActiveVideoAt}
               setActiveAudioAt={setActiveAudioAt}
             />
@@ -506,16 +508,18 @@ function TimelineEditor(): React.JSX.Element | null {
 
           <div className="timeline-sidebar__section">
             <SidebarSectionLabel icon={<Film className="size-3" />} title="Video-Quellen" />
-            {videoSources.map((source) => (
+            {videoLanes.map(({ group, members }) => (
               <SourceLaneLabel
-                key={source.id}
-                source={source}
-                color={colorForSourceId(source.id, sourceIds)}
-                isActive={source.id === activeVideoId}
-                hasCoverage={mapUnifiedTimeToLocal(source, playheadContentSec ?? -1) !== null}
+                key={group.id}
+                name={group.name}
+                thumbnailCachePath={members.find((m) => m.thumbnailCachePath)?.thumbnailCachePath}
+                color={colorForGroupId(group.id, groupIds)}
+                isActive={members.some((m) => m.id === activeVideoId)}
+                hasCoverage={memberCovering(members, playheadContentSec ?? -1) !== undefined}
                 onSetActiveHere={() => {
-                  if (playheadContentSec !== null)
-                    void setActiveVideoAt(playheadContentSec, source.id)
+                  if (playheadContentSec === null) return
+                  const member = memberCovering(members, playheadContentSec)
+                  if (member) void setActiveVideoAt(playheadContentSec, member.id)
                 }}
               />
             ))}
@@ -523,17 +527,18 @@ function TimelineEditor(): React.JSX.Element | null {
 
           <div className="timeline-sidebar__section">
             <SidebarSectionLabel icon={<Mic className="size-3" />} title="Audio-Quellen" />
-            {audioRows.map(({ source, linkedVideoLabel }) => (
+            {audioLanes.map(({ group, members }) => (
               <SourceLaneLabel
-                key={source.id}
-                source={source}
-                color={colorForSourceId(source.id, sourceIds)}
-                linkedVideoLabel={linkedVideoLabel}
-                isActive={source.id === activeAudioId}
-                hasCoverage={mapUnifiedTimeToLocal(source, playheadContentSec ?? -1) !== null}
+                key={group.id}
+                name={group.name}
+                thumbnailCachePath={members.find((m) => m.thumbnailCachePath)?.thumbnailCachePath}
+                color={colorForGroupId(group.id, groupIds)}
+                isActive={members.some((m) => m.id === activeAudioId)}
+                hasCoverage={memberCovering(members, playheadContentSec ?? -1) !== undefined}
                 onSetActiveHere={() => {
-                  if (playheadContentSec !== null)
-                    void setActiveAudioAt(playheadContentSec, source.id)
+                  if (playheadContentSec === null) return
+                  const member = memberCovering(members, playheadContentSec)
+                  if (member) void setActiveAudioAt(playheadContentSec, member.id)
                 }}
               />
             ))}
@@ -559,20 +564,20 @@ function TimelineEditor(): React.JSX.Element | null {
 
               <div className="timeline-section">
                 <BodySectionDivider trackWidthPx={trackWidthPx} />
-                {videoSources.map((source) => (
+                {videoLanes.map(({ group, members }) => (
                   <SourceLaneTrack
-                    key={source.id}
-                    source={source}
+                    key={group.id}
+                    members={members}
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
-                    color={colorForSourceId(source.id, sourceIds)}
+                    color={colorForGroupId(group.id, groupIds)}
                     activeIntervals={project.edit.activeVideoIntervals}
                     chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
                     interactive={!isCut}
-                    onWaveformClick={(placementSec) =>
-                      handleWaveformClick(placementSec, setActiveVideoAt, source.id)
+                    onWaveformClick={(placementSec, sourceId) =>
+                      handleWaveformClick(placementSec, setActiveVideoAt, sourceId)
                     }
                     onMoveBoundary={(leftId, atSec) => void moveActiveVideoBoundary(leftId, atSec)}
                   />
@@ -581,20 +586,20 @@ function TimelineEditor(): React.JSX.Element | null {
 
               <div className="timeline-section">
                 <BodySectionDivider trackWidthPx={trackWidthPx} />
-                {audioRows.map(({ source }) => (
+                {audioLanes.map(({ group, members }) => (
                   <SourceLaneTrack
-                    key={source.id}
-                    source={source}
+                    key={group.id}
+                    members={members}
                     pixelsPerSecond={pixelsPerSecond}
                     trackWidthPx={trackWidthPx}
-                    color={colorForSourceId(source.id, sourceIds)}
+                    color={colorForGroupId(group.id, groupIds)}
                     activeIntervals={project.edit.activeAudioIntervals}
                     chunks={laneChunks}
                     sources={project.sources}
                     timelineDurationSec={project.timelineDurationSec}
                     interactive={!isCut}
-                    onWaveformClick={(placementSec) =>
-                      handleWaveformClick(placementSec, setActiveAudioAt, source.id)
+                    onWaveformClick={(placementSec, sourceId) =>
+                      handleWaveformClick(placementSec, setActiveAudioAt, sourceId)
                     }
                     onMoveBoundary={(leftId, atSec) => void moveActiveAudioBoundary(leftId, atSec)}
                   />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyProject, type Project, type SourceClip } from '@shared/types/project'
+import { ensureDeviceGroups } from '@shared/types/device-grouping'
 import { reconcileProject } from './reconcile'
 
 function videoSource(id: string, durationSec: number): SourceClip {
@@ -28,7 +29,9 @@ function baseProject(): Project {
   const p = createEmptyProject('test', 'proj-1')
   p.sources = [videoSource('new-a', 100)]
   p.timelineDurationSec = 100
-  return p
+  // reconcileProject also runs ensureDeviceGroups, so a genuinely "clean" project must already be
+  // grouped for reconcile to be a no-op — mirror that here.
+  return ensureDeviceGroups(p)
 }
 
 describe('reconcileProject', () => {

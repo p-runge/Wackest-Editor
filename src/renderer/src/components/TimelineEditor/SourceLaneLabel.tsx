@@ -1,28 +1,27 @@
-import { Link2 } from 'lucide-react'
-import type { SourceClip } from '@shared/types/project'
 import { toMediaUrl } from '@shared/types/media-url'
 import { SOURCE_LANE_HEIGHT_PX } from './constants'
 
 interface SourceLaneLabelProps {
-  source: SourceClip
+  /** Device group name shown on the lane. */
+  name: string
+  /** Optional thumbnail (first member source that has one). */
+  thumbnailCachePath?: string
   color: string
-  /** Whether this source is the currently-resolved active video / active audio at the playhead. */
+  /** Whether one of this group's members is the currently-resolved active video/audio at the playhead. */
   isActive: boolean
-  /** Whether this source has footage at the current playhead — disables the active-toggle if not. */
+  /** Whether this group has any footage at the current playhead — disables the active-toggle if not. */
   hasCoverage: boolean
-  /** Sets this source active starting at the current playhead. */
+  /** Sets this group active (its member covering the playhead) starting at the current playhead. */
   onSetActiveHere: () => void
-  /** Set when this row duplicates a video source's own audio into the audio section. */
-  linkedVideoLabel?: string
 }
 
 function SourceLaneLabel({
-  source,
+  name,
+  thumbnailCachePath,
   color,
   isActive,
   hasCoverage,
-  onSetActiveHere,
-  linkedVideoLabel
+  onSetActiveHere
 }: SourceLaneLabelProps): React.JSX.Element {
   return (
     <div
@@ -35,21 +34,13 @@ function SourceLaneLabel({
         } as React.CSSProperties
       }
     >
-      {source.thumbnailCachePath && (
-        <img className="source-lane__thumb" src={toMediaUrl(source.thumbnailCachePath)} alt="" />
+      {thumbnailCachePath && (
+        <img className="source-lane__thumb" src={toMediaUrl(thumbnailCachePath)} alt="" />
       )}
-      <span className="truncate">{source.label}</span>
-      {linkedVideoLabel && (
-        <span
-          className="ml-auto shrink-0 text-muted-foreground"
-          title={`Ton von Video-Quelle „${linkedVideoLabel}“`}
-        >
-          <Link2 className="size-3" />
-        </span>
-      )}
+      <span className="truncate">{name}</span>
       <button
         type="button"
-        className={`source-lane__active-toggle${linkedVideoLabel ? '' : ' ml-auto'}${!hasCoverage ? ' source-lane__active-toggle--disabled' : ''}`}
+        className={`source-lane__active-toggle ml-auto${!hasCoverage ? ' source-lane__active-toggle--disabled' : ''}`}
         style={{ '--tile-color': color } as React.CSSProperties}
         disabled={!hasCoverage}
         onClick={onSetActiveHere}

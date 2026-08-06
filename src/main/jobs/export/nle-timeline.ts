@@ -92,16 +92,17 @@ function resolveSequenceFormat(sources: SourceClip[]): {
 }
 
 /**
- * Builds one raw track for a source: its full footage on the sync timeline, razor-cut at every
+ * Builds the raw clips for a source: its full footage on the sync timeline, razor-cut at every
  * active-track switch boundary that falls inside its footage, with each resulting sub-clip enabled
  * iff this source is the resolved active one for that span. Adjacent sub-clips with the same enabled
- * state are merged, so a cut only ever lands where THIS source's active status actually flips.
+ * state are merged, so a cut only ever lands where THIS source's active status actually flips. All
+ * clips of one device group are concatenated onto a single track (see `buildMulticamTimeline`).
  */
-function buildRawTrack(
+function buildRawClips(
   source: SourceClip,
   intervals: TrackInterval[],
   resolveActive: (atSec: number) => string | undefined
-): NleTrack {
+): NleClip[] {
   const clips: NleClip[] = []
 
   for (const seg of source.syncSegments) {
@@ -144,7 +145,7 @@ function buildRawTrack(
     }
   }
 
-  return { name: `Roh: ${source.label}`, clips }
+  return clips
 }
 
 function collectAssets(tracks: NleTrack[], sources: SourceClip[]): NleAsset[] {
@@ -170,29 +171,52 @@ function collectAssets(tracks: NleTrack[], sources: SourceClip[]): NleAsset[] {
 }
 
 /**
- * Builds the raw multicam timeline on the SYNC (unified) timeline: every raw source in parallel at
- * its synced offset (full footage), each track razor-cut at the camera/audio switch points with the
- * non-active sub-clips disabled. No separate "cut" track — the active selection is encoded purely by
- * which sub-clips are enabled, so the layout carries both the raw material and the current pick.
+ * Builds the raw multicam timeline on the SYNC (unified) timeline: one video + one audio track per
+ * DEVICE GROUP (in group order → first group is V1/A1), each holding all of that device's clips in
+ * parallel at their synced offsets (full footage), razor-cut at the camera/audio switch points with
+ * the non-active sub-clips disabled. No separate "cut" track — the active selection is encoded purely
+ * by which sub-clips are enabled, so the layout carries both the raw material and the current pick.
  */
 export function buildMulticamTimeline(project: Project): NleTimeline {
-  const { sources, edit } = project
+  const { sources, edit, deviceGroups } = project
 
-  const videoTracks = sources
-    .filter((s) => s.probed.hasVideo && sourceCoverageRange(s))
-    .map((s) =>
-      buildRawTrack(s, edit.activeVideoIntervals, (atSec) =>
-        resolveVideoSourceId(edit.activeVideoIntervals, atSec)
-      )
-    )
+  // A source's group is its deviceGroupId; a source that somehow has none (should not happen after
+  // ensureDeviceGroups) falls back to its own id as a singleton group so its footage is never lost.
+  const groupIdOf = (s: SourceClip): string => s.deviceGroupId ?? s.id
+  const orderOf = new Map(deviceGroups.map((g) => [g.id, g.order]))
+  const nameOf = new Map(deviceGroups.map((g) => [g.id, g.name]))
 
-  const audioTracks = sources
-    .filter((s) => s.probed.hasAudio && sourceCoverageRange(s))
-    .map((s) =>
-      buildRawTrack(s, edit.activeAudioIntervals, (atSec) =>
-        resolveAudioSourceId(edit.activeAudioIntervals, atSec)
+  const groupIds = [...new Set(sources.map(groupIdOf))].sort(
+    (a, b) => (orderOf.get(a) ?? Infinity) - (orderOf.get(b) ?? Infinity)
+  )
+
+  const videoTracks: NleTrack[] = []
+  const audioTracks: NleTrack[] = []
+  for (const groupId of groupIds) {
+    const members = sources.filter((s) => groupIdOf(s) === groupId && sourceCoverageRange(s))
+    // Group name for the track; fall back to a member label for ungrouped/repair edge cases.
+    const name = nameOf.get(groupId) ?? members[0]?.label ?? groupId
+
+    const videoClips = members
+      .filter((s) => s.probed.hasVideo)
+      .flatMap((s) =>
+        buildRawClips(s, edit.activeVideoIntervals, (atSec) =>
+          resolveVideoSourceId(edit.activeVideoIntervals, atSec)
+        )
       )
-    )
+      .sort((a, b) => a.timelineStartSec - b.timelineStartSec)
+    if (videoClips.length > 0) videoTracks.push({ name, clips: videoClips })
+
+    const audioClips = members
+      .filter((s) => s.probed.hasAudio)
+      .flatMap((s) =>
+        buildRawClips(s, edit.activeAudioIntervals, (atSec) =>
+          resolveAudioSourceId(edit.activeAudioIntervals, atSec)
+        )
+      )
+      .sort((a, b) => a.timelineStartSec - b.timelineStartSec)
+    if (audioClips.length > 0) audioTracks.push({ name, clips: audioClips })
+  }
 
   let totalDurationSec = 0
   for (const source of sources) {

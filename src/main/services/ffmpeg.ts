@@ -44,6 +44,24 @@ export function probeFile(filePath: string): Promise<ProbedMediaInfo> {
         if (den) frameRate = num / den
       }
 
+      // Recording-device tags live under different keys per device (QuickTime uses reverse-DNS,
+      // others plain names) and on either the format or the video stream — merge both into a
+      // lowercased lookup so device-grouping can fingerprint by make/model/encoder.
+      const tags: Record<string, string> = {}
+      for (const source of [data.format.tags, videoStream?.tags]) {
+        if (!source) continue
+        for (const [key, value] of Object.entries(source)) {
+          if (value != null) tags[key.toLowerCase()] = String(value)
+        }
+      }
+      const pickTag = (...keys: string[]): string | undefined => {
+        for (const key of keys) {
+          const value = tags[key]
+          if (value && value.trim().length > 0) return value.trim()
+        }
+        return undefined
+      }
+
       resolve({
         durationSec,
         hasVideo: !!videoStream,
@@ -55,7 +73,10 @@ export function probeFile(filePath: string): Promise<ProbedMediaInfo> {
         frameRate,
         sampleRate: audioStream?.sample_rate ? Number(audioStream.sample_rate) : undefined,
         channels: audioStream?.channels,
-        container: data.format.format_name ?? ''
+        container: data.format.format_name ?? '',
+        make: pickTag('com.apple.quicktime.make', 'make', 'com.android.manufacturer'),
+        model: pickTag('com.apple.quicktime.model', 'model', 'com.android.model'),
+        encoder: pickTag('encoder', 'com.apple.quicktime.software', 'handler_name')
       })
     })
   })

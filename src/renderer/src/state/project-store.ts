@@ -9,6 +9,7 @@ import {
   type TranscriptionProviderId,
   type HeatmapProviderId
 } from '@shared/types/project'
+import { ensureDeviceGroups } from '@shared/types/device-grouping'
 import { withRecentProject } from '@shared/types/settings'
 import type { SamplingDensity } from '@shared/types/sampling'
 import type {
@@ -125,6 +126,10 @@ interface ProjectState {
   importSourcesFromDrop: (filePaths: string[]) => Promise<void>
   cancelImportFile: (filePath: string) => void
   removeSource: (sourceId: string) => Promise<void>
+  renameDeviceGroup: (groupId: string, name: string) => Promise<void>
+  reorderDeviceGroup: (groupId: string, direction: 'up' | 'down') => Promise<void>
+  moveSourceToGroup: (sourceId: string, groupId: string) => Promise<void>
+  moveSourceToNewGroup: (sourceId: string) => Promise<void>
   runSync: () => Promise<void>
   setManualOffset: (sourceId: string, segmentId: string, offsetSec: number) => Promise<void>
   runTranscription: () => Promise<void>
@@ -379,6 +384,73 @@ export const useProjectStore = create<ProjectState>()(
           } catch (err) {
             set({ importError: String(err) })
           }
+        },
+
+        renameDeviceGroup: async (groupId, name) => {
+          const trimmed = name.trim()
+          if (trimmed.length === 0) return
+          set((state) => {
+            if (!state.project) return state
+            return {
+              project: {
+                ...state.project,
+                deviceGroups: state.project.deviceGroups.map((g) =>
+                  g.id === groupId ? { ...g, name: trimmed } : g
+                )
+              }
+            }
+          })
+          await get().saveProject()
+        },
+
+        reorderDeviceGroup: async (groupId, direction) => {
+          set((state) => {
+            if (!state.project) return state
+            const ordered = [...state.project.deviceGroups].sort((a, b) => a.order - b.order)
+            const index = ordered.findIndex((g) => g.id === groupId)
+            const target = direction === 'up' ? index - 1 : index + 1
+            if (index === -1 || target < 0 || target >= ordered.length) return state
+            ;[ordered[index], ordered[target]] = [ordered[target], ordered[index]]
+            // Re-densify order to the new positions.
+            const deviceGroups = ordered.map((g, i) => ({ ...g, order: i }))
+            return { project: { ...state.project, deviceGroups } }
+          })
+          await get().saveProject()
+        },
+
+        moveSourceToGroup: async (sourceId, groupId) => {
+          set((state) => {
+            if (!state.project) return state
+            const updated: Project = {
+              ...state.project,
+              sources: state.project.sources.map((s) =>
+                s.id === sourceId ? { ...s, deviceGroupId: groupId } : s
+              )
+            }
+            // ensureDeviceGroups prunes a group left empty by the move and re-densifies order.
+            return { project: ensureDeviceGroups(updated) }
+          })
+          await get().saveProject()
+        },
+
+        moveSourceToNewGroup: async (sourceId) => {
+          set((state) => {
+            if (!state.project) return state
+            const source = state.project.sources.find((s) => s.id === sourceId)
+            if (!source) return state
+            const order =
+              state.project.deviceGroups.reduce((max, g) => Math.max(max, g.order), -1) + 1
+            const newGroup = { id: uuidv4(), name: source.label, order }
+            const updated: Project = {
+              ...state.project,
+              deviceGroups: [...state.project.deviceGroups, newGroup],
+              sources: state.project.sources.map((s) =>
+                s.id === sourceId ? { ...s, deviceGroupId: newGroup.id } : s
+              )
+            }
+            return { project: ensureDeviceGroups(updated) }
+          })
+          await get().saveProject()
         },
 
         runSync: async () => {

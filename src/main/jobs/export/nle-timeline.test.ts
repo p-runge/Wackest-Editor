@@ -48,7 +48,12 @@ function interval(startSec: number, endSec: number, value: string): TrackInterva
   return { id: `${value}-${startSec}`, startSec, endSec, value }
 }
 
-function project(sources: SourceClip[], edit: Project['edit'], name = 'Test'): Project {
+function project(
+  sources: SourceClip[],
+  edit: Project['edit'],
+  deviceGroups: Project['deviceGroups'] = [],
+  name = 'Test'
+): Project {
   return {
     schemaVersion: SCHEMA_VERSION,
     id: 'p1',
@@ -56,6 +61,7 @@ function project(sources: SourceClip[], edit: Project['edit'], name = 'Test'): P
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sources,
+    deviceGroups,
     timelineDurationSec: 0,
     transcript: [],
     trackHeatmaps: [],
@@ -67,9 +73,11 @@ function project(sources: SourceClip[], edit: Project['edit'], name = 'Test'): P
   }
 }
 
-function trackFor(tracks: NleTrack[], label: string): NleTrack {
-  const track = tracks.find((t) => t.name === `Roh: ${label}`)
-  if (!track) throw new Error(`track for ${label} not found`)
+// Ungrouped test sources fall back to a singleton group named by the source label (see
+// buildMulticamTimeline), so a lane's name equals the source's label unless a device group is set.
+function trackFor(tracks: NleTrack[], name: string): NleTrack {
+  const track = tracks.find((t) => t.name === name)
+  if (!track) throw new Error(`track ${name} not found`)
   return track
 }
 
@@ -250,6 +258,50 @@ describe('buildMulticamTimeline', () => {
     const timeline = buildMulticamTimeline(p)
     expect(timeline.timebase).toBe(30)
     expect(timeline.ntsc).toBe(true)
+  })
+
+  it('puts all clips of one device group on a single track, ordered by group order', () => {
+    // Handy group: two short, non-overlapping clips (0-20 and 40-60). Camera group: one long clip.
+    const handyA = source('handyA', 0, 20, 0, { deviceGroupId: 'g-phone' })
+    const handyB = source('handyB', 0, 20, 40, { deviceGroupId: 'g-phone' }) // unified 40-60
+    const camMain = source('camMain', 0, 60, 0, { deviceGroupId: 'g-cam' })
+    const p = project(
+      [handyA, handyB, camMain],
+      {
+        activeVideoIntervals: [
+          interval(0, 20, 'handyA'),
+          interval(20, 40, 'camMain'),
+          interval(40, 60, 'handyB')
+        ],
+        activeAudioIntervals: [interval(0, 60, 'camMain')], // camera mic throughout
+        keptRanges: [{ id: 'k', startSec: 0, endSec: 60 }]
+      },
+      [
+        { id: 'g-phone', name: 'Handy', order: 0 },
+        { id: 'g-cam', name: 'Kamera', order: 1 }
+      ]
+    )
+
+    const timeline = buildMulticamTimeline(p)
+
+    // one track per group, in group order (Handy = V1, Kamera = V2)
+    expect(timeline.videoTracks.map((t) => t.name)).toEqual(['Handy', 'Kamera'])
+
+    // both handy clips live on the single Handy track, sorted by start, each enabled where active
+    const handyVideo = trackFor(timeline.videoTracks, 'Handy')
+    expect(handyVideo.clips.map((c) => c.sourceId)).toEqual(['handyA', 'handyB'])
+    expect(handyVideo.clips.map((c) => [c.timelineStartSec, c.timelineEndSec, c.enabled])).toEqual([
+      [0, 20, true],
+      [40, 60, true]
+    ])
+
+    // camera video is razor-cut around the two handy takes: disabled, enabled (its own take), disabled
+    const camVideo = trackFor(timeline.videoTracks, 'Kamera')
+    expect(camVideo.clips.map((c) => c.enabled)).toEqual([false, true, false])
+
+    // audio: camera mic is the active audio throughout -> handy audio fully disabled, camera enabled
+    expect(trackFor(timeline.audioTracks, 'Handy').clips.every((c) => !c.enabled)).toBe(true)
+    expect(trackFor(timeline.audioTracks, 'Kamera').clips.every((c) => c.enabled)).toBe(true)
   })
 
   it('throws when no source has been synced', () => {

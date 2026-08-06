@@ -7,6 +7,14 @@ export function colorForSourceId(sourceId: string, allSourceIdsInOrder: string[]
   return SOURCE_PALETTE[index % SOURCE_PALETTE.length]
 }
 
+/** Per-device-group color, indexed by the group's position in render order (same palette/scheme as
+ *  colorForSourceId, just keyed by group instead of source now that a lane is a device group). */
+export function colorForGroupId(groupId: string, allGroupIdsInOrder: string[]): string {
+  const index = allGroupIdsInOrder.indexOf(groupId)
+  if (index === -1) return '#888888'
+  return SOURCE_PALETTE[index % SOURCE_PALETTE.length]
+}
+
 // Sequential single-hue ramp (dark->light amber) for magnitude (heatmap score 0..1).
 const SCORE_RAMP: Array<[number, number, number]> = [
   [0x33, 0x2a, 0x22],

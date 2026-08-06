@@ -5,7 +5,9 @@ import { z } from 'zod'
 // v3: the hard-cut-gap concept was removed — non-overlapping clusters are now concatenated directly,
 // so the `hardCutMarkers` field is gone.
 // v4: `providerConfig.stt` was renamed to `providerConfig.transcription` (naming cleanup, no data change).
-export const SCHEMA_VERSION = 4
+// v5: sources are grouped into `deviceGroups` (a `deviceGroupId` per source) so all clips of one
+// device share a single editor lane / export track; `probed` gained make/model/encoder for auto-grouping.
+export const SCHEMA_VERSION = 5
 
 export const SourceKindSchema = z.enum(['video', 'audio'])
 export type SourceKind = z.infer<typeof SourceKindSchema>
@@ -21,7 +23,12 @@ export const ProbedMediaInfoSchema = z.object({
   frameRate: z.number().optional(),
   sampleRate: z.number().optional(),
   channels: z.number().optional(),
-  container: z.string()
+  container: z.string(),
+  // Recording-device fingerprint from container/stream metadata tags (when present) — used to
+  // auto-group clips that came from the same device. See device-grouping.ts.
+  make: z.string().optional(),
+  model: z.string().optional(),
+  encoder: z.string().optional()
 })
 export type ProbedMediaInfo = z.infer<typeof ProbedMediaInfoSchema>
 
@@ -51,6 +58,10 @@ export const SourceClipSchema = z.object({
   label: z.string(),
   probed: ProbedMediaInfoSchema,
   role: SourceRoleSchema.optional(),
+  // The device group this clip belongs to (see DeviceGroupSchema). All clips sharing a
+  // deviceGroupId render on one editor lane / export track. Optional so pre-v5 projects load;
+  // `ensureDeviceGroups` (device-grouping.ts) assigns any missing ones on import/open.
+  deviceGroupId: z.string().optional(),
   // always exactly one segment per source; non-overlapping source clusters are concatenated
   // directly one after another (method: 'no-overlap-gap' marks a cluster placed without overlap)
   syncSegments: z.array(SyncSegmentSchema),
@@ -58,6 +69,15 @@ export const SourceClipSchema = z.object({
   thumbnailCachePath: z.string().optional()
 })
 export type SourceClip = z.infer<typeof SourceClipSchema>
+
+// A recording device (camera, phone, GoPro, external mic, …). Every source belongs to exactly one.
+// `order` drives both the editor lane order and the export track order (first group = V1/A1).
+export const DeviceGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  order: z.number()
+})
+export type DeviceGroup = z.infer<typeof DeviceGroupSchema>
 
 export const TranscriptWordSchema = z.object({
   word: z.string(),
@@ -171,6 +191,7 @@ export const ProjectSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   sources: z.array(SourceClipSchema),
+  deviceGroups: z.array(DeviceGroupSchema),
   timelineDurationSec: z.number(),
   transcript: z.array(TranscriptSegmentSchema),
   trackHeatmaps: z.array(TrackHeatmapSchema),
@@ -188,6 +209,7 @@ export function createEmptyProject(name: string, id: string): Project {
     createdAt: now,
     updatedAt: now,
     sources: [],
+    deviceGroups: [],
     timelineDurationSec: 0,
     transcript: [],
     trackHeatmaps: [],

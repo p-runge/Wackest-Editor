@@ -1,4 +1,5 @@
 import type { Project } from '@shared/types/project'
+import { ensureDeviceGroups } from '@shared/types/device-grouping'
 import { initializeKeptRanges } from './timeline-edit'
 
 // Kept ranges are placement-based (no source id), so an end past the timeline — or a fully swapped
@@ -18,6 +19,10 @@ const OUT_OF_BOUNDS_EPS = 0.01
  * This is intentionally conservative — it only drops references to sources that are genuinely gone
  * and only resets cut ranges when they're out of bounds or the footage was wholly swapped, so a
  * user's real cuts are never discarded on a partial change.
+ *
+ * It also runs `ensureDeviceGroups` on the result, since this is the single choke point every
+ * source-changing path (load, import, sync, remove) already funnels through — so newly imported and
+ * pre-v5 migrated sources always come out assigned to a device group.
  */
 export function reconcileProject(project: Project): Project {
   const sourceIds = new Set(project.sources.map((s) => s.id))
@@ -54,12 +59,12 @@ export function reconcileProject(project: Project): Project {
     activeVideoIntervals.length === project.edit.activeVideoIntervals.length &&
     activeAudioIntervals.length === project.edit.activeAudioIntervals.length &&
     keptRanges === project.edit.keptRanges
-  if (unchanged) return project
+  if (unchanged) return ensureDeviceGroups(project)
 
-  return {
+  return ensureDeviceGroups({
     ...project,
     transcript,
     trackHeatmaps,
     edit: { ...project.edit, keptRanges, activeVideoIntervals, activeAudioIntervals }
-  }
+  })
 }
