@@ -1,19 +1,21 @@
-import { buildExportSegments, type ExportSegment } from './edl'
-import { mapUnifiedTimeToLocal, sourceCoverageRange } from '@shared/types/timeline-time'
+import {
+  resolveVideoSourceId,
+  resolveAudioSourceId,
+  sourceCoverageRange
+} from '@shared/types/timeline-time'
 import type { Project, SourceClip, TrackInterval } from '@shared/types/project'
 
 /**
  * NLE-neutral intermediate representation of the edit, decoupled from any interchange format:
- * a timeline of parallel video/audio tracks whose clips reference the ORIGINAL source media by
- * local media time — no re-encode, non-destructive, editable downstream. Each concrete serializer
- * (FCP7 XML, FCPXML, …) only has to translate this structure into its own time model and track
- * layout; all the edit resolution lives here and is shared.
+ * every raw source laid in parallel on the sync (unified) timeline, so the whole multicam edit can
+ * be re-worked downstream. Clips reference the ORIGINAL source media by local media time — no
+ * re-encode, non-destructive — and each raw track is razor-cut at the camera/audio switch points,
+ * with the non-active sub-clips marked disabled. At any instant exactly one clip per role is
+ * enabled, so the NLE composites/plays the active source; re-picking is just toggling a clip's
+ * enable state (in Premiere: the higher, disabled clip lets the enabled one "underneath" show).
  *
- * Two layouts are built from the same primitives:
- *  - `buildCutTimeline` — the finished cut: kept ranges concatenated in placement order onto a
- *    single video + single audio track. Mirrors the MP4 export, just non-destructive.
- *  - `buildMulticamTimeline` — every raw source laid in parallel on the sync (unified) timeline,
- *    plus the tool's active selection on a top track, for re-picking camera/audio downstream.
+ * Each concrete serializer (FCP7 XML, …) only has to translate this structure into its own time and
+ * track model; all the edit resolution lives here and is shared.
  */
 
 /** One clip placed on the timeline, referencing a stretch of a source's own media (all in seconds). */
@@ -24,15 +26,14 @@ export interface NleClip {
   /** In/out point within the source media's OWN local time. */
   sourceInSec: number
   sourceOutSec: number
+  /** Whether this sub-clip is the active source for its span — disabled clips are present but
+   *  muted/hidden on import, so only the active source shows/plays out of the box. */
+  enabled: boolean
 }
 
-/** One track (video or audio) holding clips in timeline order. Ordered bottom-to-top in the parent
- *  timeline arrays — the last track is the topmost (visually on top / last in the FCP7 `<video>`). */
+/** One track (video or audio) holding clips in timeline order. */
 export interface NleTrack {
   name: string
-  /** A disabled track is present but muted/hidden on import — used to keep raw audio sources from
-   *  all summing at once, so only the active-selection audio track plays out of the box. */
-  enabled: boolean
   clips: NleClip[]
 }
 
@@ -64,13 +65,6 @@ export interface NleTimeline {
   totalDurationSec: number
 }
 
-/** A single export segment placed at its cumulative position on the concatenated program timeline. */
-interface PlacedSegment {
-  segment: ExportSegment
-  programStartSec: number
-  programEndSec: number
-}
-
 // NTSC fractional rates (23.976/29.97/59.94) read back from probe as e.g. 29.97; detect them so the
 // serializers can emit the `1000/1001` timebase NLEs expect instead of snapping to a plain integer.
 function deriveTimebase(rawFps: number | undefined): { timebase: number; ntsc: boolean } {
@@ -97,127 +91,65 @@ function resolveSequenceFormat(sources: SourceClip[]): {
   return { width, height, timebase, ntsc }
 }
 
-function clipFromUnifiedSpan(
-  source: SourceClip,
-  unifiedStartSec: number,
-  unifiedEndSec: number
-): NleClip {
-  const sourceInSec = mapUnifiedTimeToLocal(source, unifiedStartSec)
-  if (sourceInSec === null) {
-    throw new Error(
-      `Zeitpunkt ${unifiedStartSec.toFixed(1)}s liegt außerhalb der Sync-Segmente einer Quelle — bitte Sync prüfen.`
-    )
-  }
-  return {
-    sourceId: source.id,
-    timelineStartSec: unifiedStartSec,
-    timelineEndSec: unifiedEndSec,
-    sourceInSec,
-    sourceOutSec: sourceInSec + (unifiedEndSec - unifiedStartSec)
-  }
-}
-
 /**
- * Folds consecutive placed segments that share the same source AND are continuous in the source's
- * own media (segment[i].unifiedEnd === segment[i+1].unifiedStart) into one clip — collapsing a
- * camera-held stretch that was only split by an audio boundary (for video), or a run of camera cuts
- * over one continuous mic (for audio), into a single editable clip. A gap across kept ranges breaks
- * the unified-time adjacency, so those never merge. Mirrors `groupAudioSpans`, but keeps the program
- * placement so the result can be laid on the output timeline directly.
+ * Builds one raw track for a source: its full footage on the sync timeline, razor-cut at every
+ * active-track switch boundary that falls inside its footage, with each resulting sub-clip enabled
+ * iff this source is the resolved active one for that span. Adjacent sub-clips with the same enabled
+ * state are merged, so a cut only ever lands where THIS source's active status actually flips.
  */
-function foldCutClips(
-  placed: PlacedSegment[],
-  pickSourceId: (segment: ExportSegment) => string,
-  sources: SourceClip[]
-): NleClip[] {
-  interface Group {
-    sourceId: string
-    programStartSec: number
-    programEndSec: number
-    unifiedStartSec: number
-    unifiedEndSec: number
-  }
+function buildRawTrack(
+  source: SourceClip,
+  intervals: TrackInterval[],
+  resolveActive: (atSec: number) => string | undefined
+): NleTrack {
+  const clips: NleClip[] = []
 
-  const groups: Group[] = []
-  for (const p of placed) {
-    const sourceId = pickSourceId(p.segment)
-    const previous = groups[groups.length - 1]
-    if (
-      previous &&
-      previous.sourceId === sourceId &&
-      previous.unifiedEndSec === p.segment.unifiedStartSec
-    ) {
-      previous.programEndSec = p.programEndSec
-      previous.unifiedEndSec = p.segment.unifiedEndSec
-    } else {
-      groups.push({
-        sourceId,
-        programStartSec: p.programStartSec,
-        programEndSec: p.programEndSec,
-        unifiedStartSec: p.segment.unifiedStartSec,
-        unifiedEndSec: p.segment.unifiedEndSec
+  for (const seg of source.syncSegments) {
+    const spanStartSec = seg.localStartSec + seg.offsetSec
+    const spanEndSec = seg.localEndSec + seg.offsetSec
+
+    const boundaries = new Set<number>()
+    for (const iv of intervals) {
+      if (iv.startSec > spanStartSec && iv.startSec < spanEndSec) boundaries.add(iv.startSec)
+      if (iv.endSec > spanStartSec && iv.endSec < spanEndSec) boundaries.add(iv.endSec)
+    }
+    const points = [spanStartSec, ...Array.from(boundaries).sort((a, b) => a - b), spanEndSec]
+
+    for (let i = 0; i < points.length - 1; i++) {
+      const startSec = points[i]
+      const endSec = points[i + 1]
+      if (endSec <= startSec) continue
+
+      const enabled = resolveActive((startSec + endSec) / 2) === source.id
+
+      // Merge with the previous sub-clip when it's contiguous and shares the enabled state — keeps a
+      // cut only where this source's active status genuinely changes, not at every foreign switch.
+      const previous = clips[clips.length - 1]
+      if (previous && previous.enabled === enabled && previous.timelineEndSec === startSec) {
+        previous.timelineEndSec = endSec
+        previous.sourceOutSec = previous.sourceInSec + (endSec - previous.timelineStartSec)
+        continue
+      }
+
+      // Source-local in-point: unified time minus this segment's offset (valid across the whole span).
+      const sourceInSec = startSec - seg.offsetSec
+      clips.push({
+        sourceId: source.id,
+        timelineStartSec: startSec,
+        timelineEndSec: endSec,
+        sourceInSec,
+        sourceOutSec: sourceInSec + (endSec - startSec),
+        enabled
       })
     }
   }
 
-  return groups.map((g) => {
-    const source = sources.find((s) => s.id === g.sourceId)
-    if (!source) throw new Error(`Quelle ${g.sourceId} für den Export nicht gefunden.`)
-    const sourceInSec = mapUnifiedTimeToLocal(source, g.unifiedStartSec)
-    if (sourceInSec === null) {
-      throw new Error(
-        `Zeitpunkt ${g.unifiedStartSec.toFixed(1)}s liegt außerhalb der Sync-Segmente einer Quelle — bitte Sync prüfen.`
-      )
-    }
-    // Cut layout: clips are laid end-to-end on the program timeline (concatenation), NOT at their
-    // unified times — so a program gap between kept ranges is removed, exactly like the MP4 concat.
-    return {
-      sourceId: g.sourceId,
-      timelineStartSec: g.programStartSec,
-      timelineEndSec: g.programEndSec,
-      sourceInSec,
-      sourceOutSec: sourceInSec + (g.unifiedEndSec - g.unifiedStartSec)
-    }
-  })
+  return { name: `Roh: ${source.label}`, clips }
 }
 
-/** Merges adjacent same-source intervals, then maps each to a clip at its UNIFIED position — used for
- *  the multicam layout's active-selection tracks (the tool's current camera/audio choice over time). */
-function intervalsToClips(intervals: TrackInterval[], sources: SourceClip[]): NleClip[] {
-  const sorted = [...intervals].sort((a, b) => a.startSec - b.startSec)
-  const merged: Array<{ value: string; startSec: number; endSec: number }> = []
-  for (const iv of sorted) {
-    const previous = merged[merged.length - 1]
-    if (previous && previous.value === iv.value && previous.endSec === iv.startSec) {
-      previous.endSec = iv.endSec
-    } else {
-      merged.push({ value: iv.value, startSec: iv.startSec, endSec: iv.endSec })
-    }
-  }
-  const clips: NleClip[] = []
-  for (const m of merged) {
-    const source = sources.find((s) => s.id === m.value)
-    if (!source) continue
-    clips.push(clipFromUnifiedSpan(source, m.startSec, m.endSec))
-  }
-  return clips
-}
-
-/** A raw source laid on the unified timeline: one clip per sync segment, spanning its full footage
- *  at its synced offset (the classic parallel-multicam layout, before any cut/selection). */
-function rawSourceClips(source: SourceClip): NleClip[] {
-  return source.syncSegments.map((seg) => ({
-    sourceId: source.id,
-    timelineStartSec: seg.localStartSec + seg.offsetSec,
-    timelineEndSec: seg.localEndSec + seg.offsetSec,
-    sourceInSec: seg.localStartSec,
-    sourceOutSec: seg.localEndSec
-  }))
-}
-
-function collectAssets(clips: NleClip[], sources: SourceClip[]): NleAsset[] {
+function collectAssets(tracks: NleTrack[], sources: SourceClip[]): NleAsset[] {
   const byId = new Map<string, NleAsset>()
-  for (const clip of clips) {
+  for (const clip of tracks.flatMap((t) => t.clips)) {
     if (byId.has(clip.sourceId)) continue
     const source = sources.find((s) => s.id === clip.sourceId)
     if (!source) continue
@@ -237,91 +169,30 @@ function collectAssets(clips: NleClip[], sources: SourceClip[]): NleAsset[] {
   return [...byId.values()]
 }
 
-function allClips(tracks: NleTrack[]): NleClip[] {
-  return tracks.flatMap((t) => t.clips)
-}
-
 /**
- * Builds the finished-cut timeline (single video + single audio track). Reuses `buildExportSegments`
- * (the same resolution the MP4 export relies on), lays each segment end-to-end on the program
- * timeline — the concatenation of kept ranges in placement order IS the output order, exactly like
- * the MP4 concat — and folds contiguous same-source runs into editable clips.
- */
-export function buildCutTimeline(project: Project): NleTimeline {
-  const segments = buildExportSegments(
-    project.edit.keptRanges,
-    project.edit.activeVideoIntervals,
-    project.edit.activeAudioIntervals,
-    project.sources
-  )
-
-  if (segments.length === 0) {
-    throw new Error(
-      'Keine exportierbaren Abschnitte gefunden. Bitte zuerst Kamera/Audio/Schnitt festlegen.'
-    )
-  }
-
-  let cursor = 0
-  const placed: PlacedSegment[] = segments.map((segment) => {
-    const programStartSec = cursor
-    cursor += segment.unifiedEndSec - segment.unifiedStartSec
-    return { segment, programStartSec, programEndSec: cursor }
-  })
-
-  const videoTracks: NleTrack[] = [
-    {
-      name: 'Video',
-      enabled: true,
-      clips: foldCutClips(placed, (s) => s.videoSourceId, project.sources)
-    }
-  ]
-  const audioTracks: NleTrack[] = [
-    {
-      name: 'Audio',
-      enabled: true,
-      clips: foldCutClips(placed, (s) => s.audioSourceId, project.sources)
-    }
-  ]
-  const { width, height, timebase, ntsc } = resolveSequenceFormat(project.sources)
-
-  return {
-    name: project.name,
-    timebase,
-    ntsc,
-    width,
-    height,
-    videoTracks,
-    audioTracks,
-    assets: collectAssets([...allClips(videoTracks), ...allClips(audioTracks)], project.sources),
-    totalDurationSec: cursor
-  }
-}
-
-/**
- * Builds the raw multicam timeline on the SYNC (unified) timeline: every raw source laid in parallel
- * at its synced offset (full footage, no cut applied), with the tool's current active selection on a
- * top track for reference and quick override downstream. Raw audio tracks are muted so only the
- * active-audio track plays out of the box; re-picking is just re-enabling a track in the NLE.
+ * Builds the raw multicam timeline on the SYNC (unified) timeline: every raw source in parallel at
+ * its synced offset (full footage), each track razor-cut at the camera/audio switch points with the
+ * non-active sub-clips disabled. No separate "cut" track — the active selection is encoded purely by
+ * which sub-clips are enabled, so the layout carries both the raw material and the current pick.
  */
 export function buildMulticamTimeline(project: Project): NleTimeline {
-  const { sources } = project
+  const { sources, edit } = project
 
-  // Bottom-to-top: raw source tracks first, active-selection track last (= topmost).
-  const videoTracks: NleTrack[] = sources
+  const videoTracks = sources
     .filter((s) => s.probed.hasVideo && sourceCoverageRange(s))
-    .map((s) => ({ name: `Roh: ${s.label}`, enabled: true, clips: rawSourceClips(s) }))
-  const activeVideoClips = intervalsToClips(project.edit.activeVideoIntervals, sources)
-  if (activeVideoClips.length > 0) {
-    videoTracks.push({ name: 'Aktive Wahl (Video)', enabled: true, clips: activeVideoClips })
-  }
+    .map((s) =>
+      buildRawTrack(s, edit.activeVideoIntervals, (atSec) =>
+        resolveVideoSourceId(edit.activeVideoIntervals, atSec)
+      )
+    )
 
-  const audioTracks: NleTrack[] = sources
+  const audioTracks = sources
     .filter((s) => s.probed.hasAudio && sourceCoverageRange(s))
-    .map((s) => ({ name: `Roh: ${s.label}`, enabled: false, clips: rawSourceClips(s) }))
-  const activeAudioClips = intervalsToClips(project.edit.activeAudioIntervals, sources)
-  if (activeAudioClips.length > 0) {
-    audioTracks.push({ name: 'Aktive Wahl (Audio)', enabled: true, clips: activeAudioClips })
-  }
+    .map((s) =>
+      buildRawTrack(s, edit.activeAudioIntervals, (atSec) =>
+        resolveAudioSourceId(edit.activeAudioIntervals, atSec)
+      )
+    )
 
   let totalDurationSec = 0
   for (const source of sources) {
@@ -343,7 +214,7 @@ export function buildMulticamTimeline(project: Project): NleTimeline {
     height,
     videoTracks,
     audioTracks,
-    assets: collectAssets([...allClips(videoTracks), ...allClips(audioTracks)], sources),
+    assets: collectAssets([...videoTracks, ...audioTracks], sources),
     totalDurationSec
   }
 }

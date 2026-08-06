@@ -100,7 +100,9 @@ function clipItem(
   return (
     `<clipitem id="${clipId}">` +
     `<name>${escapeXml(asset.label)}</name>` +
-    `<enabled>TRUE</enabled>` +
+    // Per-clip enable: a disabled sub-clip stays on its track but is muted/hidden, so at any instant
+    // only the active source's clip composites/plays. This is how the active selection is encoded.
+    `<enabled>${clip.enabled ? 'TRUE' : 'FALSE'}</enabled>` +
     `<duration>${mediaDurationFrames}</duration>` +
     rateBlock(timeline.timebase, timeline.ntsc) +
     `<start>${start}</start>` +
@@ -137,13 +139,8 @@ function trackElement(
     })
     .join('')
 
-  return (
-    `<track>` +
-    clipItems +
-    `<enabled>${track.enabled ? 'TRUE' : 'FALSE'}</enabled>` +
-    `<locked>FALSE</locked>` +
-    `</track>`
-  )
+  // The track itself stays enabled; muting the non-active parts happens per clip (see clipItem).
+  return `<track>` + clipItems + `<enabled>TRUE</enabled>` + `<locked>FALSE</locked>` + `</track>`
 }
 
 export function serializeFcp7Xml(timeline: NleTimeline): string {

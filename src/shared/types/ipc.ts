@@ -149,13 +149,12 @@ export interface HeatmapProgressEvent {
   progress: number
 }
 
-// 'mp4' renders a finished, flattened video. The NLE formats instead write a project/edit file that
-// references the original media, for non-destructive handoff into Premiere Pro or DaVinci Resolve
-// (both import Final Cut Pro 7 XML):
-//  - 'fcp7xml'          — the finished cut: one video + one audio track, kept ranges concatenated.
-//  - 'fcp7xml-multicam' — every raw source in parallel on the sync timeline, with the active
-//                         selection on a top track, for re-picking camera/audio downstream.
-export type ExportFormat = 'mp4' | 'fcp7xml' | 'fcp7xml-multicam'
+// 'mp4' renders a finished, flattened video. 'fcp7xml' instead writes a non-destructive edit file
+// (Final Cut Pro 7 XML, imported by both Premiere Pro and DaVinci Resolve) that references the
+// original media: every raw source in parallel on the sync timeline, razor-cut at the camera/audio
+// switch points with the non-active sub-clips disabled, so the active selection is preserved while
+// staying fully re-editable downstream.
+export type ExportFormat = 'mp4' | 'fcp7xml'
 
 export interface ExportChooseOutputArgs {
   defaultName: string

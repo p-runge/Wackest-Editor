@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCutTimeline, buildMulticamTimeline } from './nle-timeline'
+import { buildMulticamTimeline, type NleTrack } from './nle-timeline'
 import {
   SCHEMA_VERSION,
   type Project,
@@ -67,97 +67,166 @@ function project(sources: SourceClip[], edit: Project['edit'], name = 'Test'): P
   }
 }
 
-describe('buildCutTimeline', () => {
-  it('lays clips end-to-end on the program timeline (concatenated), not at their unified times', () => {
-    const cam = source('cam', 0, 60, 0)
-    // two kept ranges with a real gap between them (30-40s cut out): the second range must sit
-    // directly after the first on the program timeline, not at its unified time.
-    const p = project([cam], {
-      activeVideoIntervals: [interval(0, 60, 'cam')],
-      activeAudioIntervals: [interval(0, 60, 'cam')],
-      keptRanges: [
-        { id: 'a', startSec: 0, endSec: 20 },
-        { id: 'b', startSec: 40, endSec: 50 }
-      ]
+function trackFor(tracks: NleTrack[], label: string): NleTrack {
+  const track = tracks.find((t) => t.name === `Roh: ${label}`)
+  if (!track) throw new Error(`track for ${label} not found`)
+  return track
+}
+
+// Two cameras filming the same 0-60s window in parallel; camA also carries the used mic.
+function twoCamProject(
+  activeVideoIntervals: TrackInterval[],
+  activeAudioIntervals: TrackInterval[]
+): Project {
+  return project([source('camA', 0, 60, 0), source('camB', 0, 60, 0)], {
+    activeVideoIntervals,
+    activeAudioIntervals,
+    keptRanges: [{ id: 'k', startSec: 0, endSec: 60 }]
+  })
+}
+
+describe('buildMulticamTimeline', () => {
+  it('lays one raw track per source at its synced offset, full footage', () => {
+    const camA = source('camA', 0, 60, 0)
+    const camB = source('camB', 0, 40, 100) // footage sits at unified 100-140s
+    const p = project([camA, camB], {
+      activeVideoIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
+      activeAudioIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
+      keptRanges: [{ id: 'k', startSec: 0, endSec: 140 }]
     })
 
-    const timeline = buildCutTimeline(p)
+    const timeline = buildMulticamTimeline(p)
 
-    expect(timeline.videoTracks).toHaveLength(1)
-    expect(timeline.videoTracks[0].clips).toEqual([
+    // camB's single clip spans its full footage at the synced offset (unified 100-140, local 0-40)
+    const rawCamB = trackFor(timeline.videoTracks, 'camB')
+    expect(rawCamB.clips).toEqual([
       {
-        sourceId: 'cam',
-        timelineStartSec: 0,
-        timelineEndSec: 20,
+        sourceId: 'camB',
+        timelineStartSec: 100,
+        timelineEndSec: 140,
         sourceInSec: 0,
-        sourceOutSec: 20
-      },
-      {
-        sourceId: 'cam',
-        timelineStartSec: 20,
-        timelineEndSec: 30,
-        sourceInSec: 40,
-        sourceOutSec: 50
+        sourceOutSec: 40,
+        enabled: true
       }
     ])
-    expect(timeline.totalDurationSec).toBe(30)
+    expect(timeline.totalDurationSec).toBe(140)
   })
 
-  it('merges camera-held video split only by an audio boundary into one clip', () => {
-    const cam = source('cam', 0, 60, 0)
-    const lav = source('lav', 0, 60, 0, { kind: 'audio' })
-    // video is 'cam' throughout, but the active audio switches cam->lav at 10s. Video should stay
-    // one merged clip; audio should be two clips.
-    const p = project([cam, lav], {
-      activeVideoIntervals: [interval(0, 30, 'cam')],
-      activeAudioIntervals: [interval(0, 10, 'cam'), interval(10, 30, 'lav')],
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 30 }]
-    })
+  it('razor-cuts a raw track at video switches, enabling only the active sub-clip', () => {
+    const timeline = buildMulticamTimeline(
+      twoCamProject([interval(0, 30, 'camA'), interval(30, 60, 'camB')], [interval(0, 60, 'camA')])
+    )
 
-    const timeline = buildCutTimeline(p)
-
-    expect(timeline.videoTracks[0].clips).toEqual([
-      { sourceId: 'cam', timelineStartSec: 0, timelineEndSec: 30, sourceInSec: 0, sourceOutSec: 30 }
-    ])
-    expect(timeline.audioTracks[0].clips).toEqual([
+    // camA is the active camera 0-30 (enabled), then camB takes over 30-60 (camA disabled)
+    expect(trackFor(timeline.videoTracks, 'camA').clips).toEqual([
       {
-        sourceId: 'cam',
+        sourceId: 'camA',
         timelineStartSec: 0,
-        timelineEndSec: 10,
+        timelineEndSec: 30,
         sourceInSec: 0,
-        sourceOutSec: 10
+        sourceOutSec: 30,
+        enabled: true
       },
       {
-        sourceId: 'lav',
-        timelineStartSec: 10,
+        sourceId: 'camA',
+        timelineStartSec: 30,
+        timelineEndSec: 60,
+        sourceInSec: 30,
+        sourceOutSec: 60,
+        enabled: false
+      }
+    ])
+    // camB is the mirror: disabled while camA is active, enabled once it takes over
+    expect(trackFor(timeline.videoTracks, 'camB').clips).toEqual([
+      {
+        sourceId: 'camB',
+        timelineStartSec: 0,
         timelineEndSec: 30,
-        sourceInSec: 10,
-        sourceOutSec: 30
+        sourceInSec: 0,
+        sourceOutSec: 30,
+        enabled: false
+      },
+      {
+        sourceId: 'camB',
+        timelineStartSec: 30,
+        timelineEndSec: 60,
+        sourceInSec: 30,
+        sourceOutSec: 60,
+        enabled: true
+      }
+    ])
+  })
+
+  it('disables the whole raw audio track of a source that is never the active audio', () => {
+    const timeline = buildMulticamTimeline(
+      twoCamProject(
+        [interval(0, 30, 'camA'), interval(30, 60, 'camB')],
+        [interval(0, 60, 'camA')] // camA mic used throughout
+      )
+    )
+
+    // camA carries the active audio the whole time -> one enabled clip
+    expect(trackFor(timeline.audioTracks, 'camA').clips).toEqual([
+      {
+        sourceId: 'camA',
+        timelineStartSec: 0,
+        timelineEndSec: 60,
+        sourceInSec: 0,
+        sourceOutSec: 60,
+        enabled: true
+      }
+    ])
+    // camB's mic is never active -> present but fully disabled (no summing on import)
+    expect(trackFor(timeline.audioTracks, 'camB').clips).toEqual([
+      {
+        sourceId: 'camB',
+        timelineStartSec: 0,
+        timelineEndSec: 60,
+        sourceInSec: 0,
+        sourceOutSec: 60,
+        enabled: false
+      }
+    ])
+  })
+
+  it('ignores the cut (kept ranges) and exports the full sync span', () => {
+    const camA = source('camA', 0, 60, 0)
+    const p = project([camA], {
+      activeVideoIntervals: [interval(0, 60, 'camA')],
+      activeAudioIntervals: [interval(0, 60, 'camA')],
+      // a cut that keeps only 5s — the raw multicam export must ignore it
+      keptRanges: [{ id: 'k', startSec: 0, endSec: 5 }]
+    })
+
+    const timeline = buildMulticamTimeline(p)
+    expect(timeline.totalDurationSec).toBe(60)
+    expect(trackFor(timeline.videoTracks, 'camA').clips).toEqual([
+      {
+        sourceId: 'camA',
+        timelineStartSec: 0,
+        timelineEndSec: 60,
+        sourceInSec: 0,
+        sourceOutSec: 60,
+        enabled: true
       }
     ])
   })
 
   it('maps source in-points through the sync offset', () => {
-    // camB's footage sits at unified 100-160s (offset 100), so unified 110 maps to local 10.
-    const camA = source('camA', 0, 60, 0)
-    const camB = source('camB', 0, 60, 100)
-    const p = project([camA, camB], {
-      activeVideoIntervals: [interval(0, 60, 'camA'), interval(100, 160, 'camB')],
-      activeAudioIntervals: [interval(0, 60, 'camA'), interval(100, 160, 'camB')],
-      keptRanges: [{ id: 'a', startSec: 110, endSec: 120 }]
+    const camB = source('camB', 0, 60, 100) // unified 100-160 -> local 0-60
+    const p = project([camB], {
+      activeVideoIntervals: [interval(100, 160, 'camB')],
+      activeAudioIntervals: [interval(100, 160, 'camB')],
+      keptRanges: [{ id: 'k', startSec: 100, endSec: 160 }]
     })
 
-    const timeline = buildCutTimeline(p)
-
-    expect(timeline.videoTracks[0].clips).toEqual([
-      {
-        sourceId: 'camB',
-        timelineStartSec: 0,
-        timelineEndSec: 10,
-        sourceInSec: 10,
-        sourceOutSec: 20
-      }
-    ])
+    const timeline = buildMulticamTimeline(p)
+    expect(trackFor(timeline.videoTracks, 'camB').clips[0]).toMatchObject({
+      timelineStartSec: 100,
+      timelineEndSec: 160,
+      sourceInSec: 0,
+      sourceOutSec: 60
+    })
   })
 
   it('detects an NTSC frame rate from the main source', () => {
@@ -175,113 +244,12 @@ describe('buildCutTimeline', () => {
     const p = project([cam], {
       activeVideoIntervals: [interval(0, 60, 'cam')],
       activeAudioIntervals: [interval(0, 60, 'cam')],
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 10 }]
+      keptRanges: [{ id: 'k', startSec: 0, endSec: 60 }]
     })
 
-    const timeline = buildCutTimeline(p)
+    const timeline = buildMulticamTimeline(p)
     expect(timeline.timebase).toBe(30)
     expect(timeline.ntsc).toBe(true)
-  })
-
-  it('collects only referenced sources as assets, once each', () => {
-    const cam = source('cam', 0, 60, 0)
-    const unused = source('unused', 0, 60, 0)
-    const p = project([cam, unused], {
-      activeVideoIntervals: [interval(0, 60, 'cam')],
-      activeAudioIntervals: [interval(0, 60, 'cam')],
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 10 }]
-    })
-
-    const timeline = buildCutTimeline(p)
-    expect(timeline.assets.map((a) => a.sourceId)).toEqual(['cam'])
-  })
-})
-
-describe('buildMulticamTimeline', () => {
-  it('lays each raw source in parallel at its synced offset, full footage', () => {
-    const camA = source('camA', 0, 60, 0)
-    const camB = source('camB', 0, 40, 100) // footage sits at unified 100-140s
-    const p = project([camA, camB], {
-      activeVideoIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
-      activeAudioIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
-      // a cut that would drop most of the timeline — multicam must IGNORE it and export raw
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 5 }]
-    })
-
-    const timeline = buildMulticamTimeline(p)
-
-    // one raw track per source (bottom), plus the active-selection track (top)
-    const rawCamA = timeline.videoTracks[0]
-    const rawCamB = timeline.videoTracks[1]
-    expect(rawCamA.clips).toEqual([
-      {
-        sourceId: 'camA',
-        timelineStartSec: 0,
-        timelineEndSec: 60,
-        sourceInSec: 0,
-        sourceOutSec: 60
-      }
-    ])
-    expect(rawCamB.clips).toEqual([
-      {
-        sourceId: 'camB',
-        timelineStartSec: 100,
-        timelineEndSec: 140,
-        sourceInSec: 0,
-        sourceOutSec: 40
-      }
-    ])
-    // full sync span, not the 5s cut
-    expect(timeline.totalDurationSec).toBe(140)
-  })
-
-  it('puts the active selection on the topmost (last) track', () => {
-    const camA = source('camA', 0, 60, 0)
-    const camB = source('camB', 0, 40, 100)
-    const p = project([camA, camB], {
-      activeVideoIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
-      activeAudioIntervals: [interval(0, 60, 'camA'), interval(100, 140, 'camB')],
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 140 }]
-    })
-
-    const timeline = buildMulticamTimeline(p)
-
-    const topVideo = timeline.videoTracks[timeline.videoTracks.length - 1]
-    expect(topVideo.name).toBe('Aktive Wahl (Video)')
-    expect(topVideo.clips).toEqual([
-      {
-        sourceId: 'camA',
-        timelineStartSec: 0,
-        timelineEndSec: 60,
-        sourceInSec: 0,
-        sourceOutSec: 60
-      },
-      {
-        sourceId: 'camB',
-        timelineStartSec: 100,
-        timelineEndSec: 140,
-        sourceInSec: 0,
-        sourceOutSec: 40
-      }
-    ])
-  })
-
-  it('mutes raw audio tracks but keeps the active-audio track enabled', () => {
-    const cam = source('cam', 0, 60, 0)
-    const lav = source('lav', 0, 60, 0, { kind: 'audio' })
-    const p = project([cam, lav], {
-      activeVideoIntervals: [interval(0, 60, 'cam')],
-      activeAudioIntervals: [interval(0, 60, 'lav')],
-      keptRanges: [{ id: 'a', startSec: 0, endSec: 60 }]
-    })
-
-    const timeline = buildMulticamTimeline(p)
-
-    const rawAudio = timeline.audioTracks.filter((t) => t.name.startsWith('Roh:'))
-    const activeAudio = timeline.audioTracks[timeline.audioTracks.length - 1]
-    expect(rawAudio.every((t) => t.enabled === false)).toBe(true)
-    expect(activeAudio.name).toBe('Aktive Wahl (Audio)')
-    expect(activeAudio.enabled).toBe(true)
   })
 
   it('throws when no source has been synced', () => {
