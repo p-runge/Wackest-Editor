@@ -184,15 +184,42 @@ export const useProjectStore = create<ProjectState>()(
           const newClips: SourceClip[] = await window.api.source.import({ filePaths, projectDir })
           set((state) => {
             if (!state.project) return state
+
+            // Lay newly imported clips back-to-back after the current timeline end, so they're
+            // visible on the timeline immediately (before any sync) instead of all stacked at 0 —
+            // which also made same-device clips look like they overlapped. Sync later replaces these
+            // provisional offsets with the real cross-correlated alignment.
+            let cursorSec = state.project.timelineDurationSec
+            const placedClips = newClips.map((clip) => {
+              const placed: SourceClip = {
+                ...clip,
+                syncSegments: clip.syncSegments.map((seg) => ({
+                  ...seg,
+                  offsetSec: cursorSec - seg.localStartSec
+                }))
+              }
+              cursorSec += clip.probed.durationSec
+              return placed
+            })
+
             const updated: Project = {
               ...state.project,
-              sources: [...state.project.sources, ...newClips]
+              sources: [...state.project.sources, ...placedClips]
             }
             updated.timelineDurationSec = recomputeTimelineDuration(updated)
-            // Adding footage can grow the timeline past stale out-of-bounds cut ranges; reconcile
-            // drops those (and any dead references) so a re-import can't leave a phantom gap.
+            // Initialize/extend cuts to span the new footage so the lanes actually render it, then
+            // fill active-video/audio coverage — the same timeline materialization sync does, just
+            // applied at import time too. Adding footage can also grow the timeline past stale
+            // out-of-bounds cut ranges; reconcile drops those (and any dead references).
+            updated.edit = {
+              ...updated.edit,
+              keptRanges: extendKeptRangesToDuration(
+                updated.edit.keptRanges,
+                updated.timelineDurationSec
+              )
+            }
             return {
-              project: reconcileProject(updated),
+              project: withFullActiveCoverage(reconcileProject(updated)),
               zoomFitRequestId: state.zoomFitRequestId + 1
             }
           })
