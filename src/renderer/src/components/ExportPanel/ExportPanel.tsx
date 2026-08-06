@@ -1,7 +1,11 @@
+import { useState } from 'react'
 import { FolderOpen, Rocket } from 'lucide-react'
 import { useProjectStore } from '../../state/project-store'
+import type { ExportFormat } from '@shared/types/ipc'
 import { Button } from '../ui/button'
+import { Label } from '../ui/label'
 import { Progress } from '../ui/progress'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 function stageLabel(stage: string): string {
   switch (stage) {
@@ -20,6 +24,19 @@ function stageLabel(stage: string): string {
   }
 }
 
+const FORMAT_OPTIONS: Array<{ value: ExportFormat; label: string; hint: string }> = [
+  {
+    value: 'mp4',
+    label: 'MP4-Video (fertig gerendert)',
+    hint: 'Ein fertiges Video anhand der aktiven Video-/Audio-Bereiche.'
+  },
+  {
+    value: 'fcp7xml',
+    label: 'Premiere / Resolve (XML)',
+    hint: 'Schnittdatei mit getrennten Video- und Audiospuren, die die Originalmedien referenziert – zur Weiterbearbeitung in Premiere Pro oder DaVinci Resolve.'
+  }
+]
+
 function ExportPanel(): React.JSX.Element | null {
   const project = useProjectStore((state) => state.project)
   const isExporting = useProjectStore((state) => state.isExporting)
@@ -27,6 +44,8 @@ function ExportPanel(): React.JSX.Element | null {
   const lastExportPath = useProjectStore((state) => state.lastExportPath)
   const error = useProjectStore((state) => state.exportError)
   const runExport = useProjectStore((state) => state.runExport)
+
+  const [format, setFormat] = useState<ExportFormat>('mp4')
 
   if (!project) return null
   if (project.timelineDurationSec === 0) {
@@ -47,13 +66,32 @@ function ExportPanel(): React.JSX.Element | null {
     )
   }
 
+  const selectedHint = FORMAT_OPTIONS.find((o) => o.value === format)?.hint
+
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Das fertige Video anhand der aktiven Video-/Audio-Bereiche rendern.
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="export-format">Format</Label>
+        <Select
+          value={format}
+          onValueChange={(v) => setFormat(v as ExportFormat)}
+          disabled={isExporting}
+        >
+          <SelectTrigger id="export-format">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FORMAT_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedHint && <p className="text-sm text-muted-foreground">{selectedHint}</p>}
+      </div>
 
-      <Button className="w-full" disabled={isExporting} onClick={() => void runExport()}>
+      <Button className="w-full" disabled={isExporting} onClick={() => void runExport(format)}>
         <Rocket /> {isExporting ? 'Exportiere…' : 'Exportieren'}
       </Button>
 

@@ -14,6 +14,7 @@ import type { SamplingDensity } from '@shared/types/sampling'
 import type {
   SyncProgressEvent,
   ExportProgressEvent,
+  ExportFormat,
   SourceImportProgressEvent
 } from '@shared/types/ipc'
 import {
@@ -146,7 +147,7 @@ interface ProjectState {
     newLeaderStartSec: number
   ) => Promise<void>
   deleteKeptRanges: (ids: Set<string>) => Promise<void>
-  runExport: () => Promise<void>
+  runExport: (format: ExportFormat) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -733,11 +734,14 @@ export const useProjectStore = create<ProjectState>()(
           if (changed) await get().saveProject()
         },
 
-        runExport: async () => {
+        runExport: async (format) => {
           const { project } = get()
           if (!project) return
 
-          const outputPath = await window.api.export.chooseOutput({ defaultName: project.name })
+          const outputPath = await window.api.export.chooseOutput({
+            defaultName: project.name,
+            format
+          })
           if (!outputPath) return
 
           set({ isExporting: true, exportError: null, exportProgress: null, lastExportPath: null })
@@ -745,7 +749,7 @@ export const useProjectStore = create<ProjectState>()(
             set({ exportProgress: update })
           )
           try {
-            await window.api.export.run({ project, outputPath })
+            await window.api.export.run({ project, outputPath, format })
             set({ lastExportPath: outputPath })
           } catch (err) {
             set({ exportError: String(err) })
